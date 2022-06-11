@@ -319,6 +319,9 @@ def get_freer_gpu():
 
     freest_gpu = np.argmin(memory_available)
 
+    print(memory_available)
+    print(freest_gpu)
+
     if freest_gpu > 5:
         return -1
 
@@ -332,6 +335,8 @@ def get_freer_gpu():
         torch.cuda.empty_cache()
         if gpu_idx == freest_gpu:
             return i
+    
+    return -1
 
 class RandomBatchLoader:
     def __init__(self, x: torch.Tensor, batch_size: int):
