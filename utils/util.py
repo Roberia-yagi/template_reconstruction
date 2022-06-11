@@ -235,9 +235,9 @@ def get_img_size(model: str) -> int:
     
     return img_size
 
-def load_attacker_discriminator(path: str, input_dim: int, network_dim: int, img_shape: Tuple[int, int, int]) -> nn.Module:
+def load_attacker_discriminator(path: str, input_dim: int, network_dim: int, img_shape: Tuple[int, int, int], device) -> nn.Module:
     D = Discriminator3(input_dim=input_dim, network_dim=network_dim, img_shape=img_shape)
-    D.load_state_dict(torch.load(path))
+    D.load_state_dict(torch.load(path, device))
 
     for param in D.parameters():
         param.requires_grad = False
@@ -246,9 +246,9 @@ def load_attacker_discriminator(path: str, input_dim: int, network_dim: int, img
 
     return D
 
-def load_attacker_generator(path: str, latent_dim: int, network_dim:int, img_shape: Tuple[int, int, int]) -> nn.Module:
+def load_attacker_generator(path: str, latent_dim: int, network_dim:int, img_shape: Tuple[int, int, int], device) -> nn.Module:
     G = Generator3(latent_dim=latent_dim, network_dim=network_dim ,img_shape=img_shape)
-    G.load_state_dict(torch.load(path))
+    G.load_state_dict(torch.load(path, device))
 
     for param in G.parameters():
         param.requires_grad = False

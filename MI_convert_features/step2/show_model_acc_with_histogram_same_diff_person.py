@@ -205,8 +205,8 @@ if __name__ == '__main__':
     y = np.r_[np.ones(same_cossims.numpy().shape), np.zeros(dif_cossims.numpy().shape)]
     fpr, tpr, thresholds = roc_curve(y, x)
 
-    threshold = np.argmin(fpr - tpr)
-    logger.info(f"[FPR: {fpr[threshold]}] [TPR: {tpr[threshold]}]")
+    threshold_idx = np.argmin(fpr - tpr)
+    logger.info(f"[Threshold: {thresholds[threshold_idx]}] [FPR: {fpr[threshold_idx]}] [TPR: {tpr[threshold_idx]}]")
     plt.plot(fpr, tpr)
     plt.xlabel("FPR")
     plt.ylabel("TPR")
