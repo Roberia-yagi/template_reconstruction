@@ -133,7 +133,7 @@ def load_model_as_feature_extractor(arch: str, embedding_size: int, mode: str, p
 
         if mode == 'eval':
             if embedding_size == 512:
-                path = '../../models/magface_epoch_00025.pth'
+                path = '../../../models/magface_epoch_00025.pth'
                 args = easydict.EasyDict({
                     'arch':'iresnet100',
                     'cpu_mode':True,
