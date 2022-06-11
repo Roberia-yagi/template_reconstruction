@@ -1,0 +1,334 @@
+import os
+import sys
+import re
+
+sys.path.append(os.path.join(os.path.dirname(__file__)))
+sys.path.append("../")
+import easydict
+import json
+import logging
+from termcolor import cprint
+from typing import Any, Union, Optional, Tuple
+
+import torch
+import torch.nn as nn
+import torchvision.models as models 
+import numpy as np
+
+import facenet_pytorch
+import arcface_pytorch
+import magface_pytorch
+from magface_pytorch.inference import network_inf
+from magface_pytorch.models import magface 
+
+from my_models.AutoEncoder import AutoEncoder
+from my_models.Discriminator3 import Discriminator3
+from my_models.Generator3 import Generator3
+
+
+def save_json(path: str, obj: Any):
+    with open(path, "w") as json_file:
+        json.dump(obj, json_file, indent=4)
+
+def load_json(path: str) -> Any:
+    with open(path) as json_obj:
+        return json.load(json_obj)
+
+def create_logger(name: str, path: Optional[str] = None):
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+
+    fmt = logging.Formatter(
+        "[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s",
+        "%Y-%m-%dT%H:%M:%S"
+    )
+
+    sh = logging.StreamHandler(sys.stdout)
+    sh.setFormatter(fmt)
+    logger.addHandler(sh)
+
+    if path is not None:
+        fh = logging.FileHandler(path)
+        fh.setFormatter(fmt)
+        logger.addHandler(fh)
+
+    return logger
+
+def resolve_path(*pathes: Tuple[str]) -> str:
+    return os.path.expanduser(os.path.join(*pathes))
+
+def load_model_as_feature_extractor(arch: str, embedding_size: int, mode: str, path: str, pretrained=False) -> Tuple[nn.Module, int]:
+    if not mode in ['train', 'eval']:
+        raise("Model mode is incorrect")
+    if not embedding_size in [128, 512]:
+        raise("Embedding size should be 128 or 512")
+    if not pretrained in [True, False]:
+        raise("pretrained should be True or False")
+    if pretrained and embedding_size == 128 and path is None:
+        raise("128 dim pretrained model requires path")
+    if mode == 'eval' and not pretrained:
+        raise("Evalation model can't be used without pretrained")
+
+    load_status = 'Not loaded'
+
+    if arch == "FaceNet":
+        model = facenet_pytorch.InceptionResnetV1(classify=False, num_classes=None, pretrained="vggface2")
+        model.classify=False
+        if embedding_size == 128:
+            for param in model.parameters():
+                param.requires_grad = False
+            model.last_linear = nn.Linear(in_features=1792, out_features=128, bias=False)
+            model.last_bn = nn.BatchNorm1d(128, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+            model.logits = nn.Linear(in_features=128, out_features=1000, bias=True)
+            if pretrained:
+                load_status = model.load_state_dict(torch.load(path)) 
+        elif embedding_size == 512:
+            path = 'Pretrained by original developer'
+            load_status = 'Successfully Loaded'
+
+        if mode == 'train':
+            model.train()
+        elif mode == 'eval':
+            model.eval()
+            for param in model.parameters():
+                param.requires_grad = False
+
+    # SET PATH BEFORE USE
+    # if arch == "Arcface":
+    #     model = arcface_pytorch.model.Backbone(num_layers=50, drop_ratio=0, mode='ir_se')
+    #     if embedding_size == 128:
+    #         # Finetuned
+    #         model = arcface_pytorch.model.Backbone(num_layers=50, drop_ratio=0, mode='ir_se')
+    #         for param in model.parameters():
+    #             param.requires_grad = False
+    #         model.output_layer[3]= torch.nn.Linear(in_features=model.output_layer[3].in_features,
+    #                                                 out_features=128,
+    #                                                 bias=True)
+    #         model.output_layer[4] = torch.nn.BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+    #     model.load_state_dict(torch.load(path)) 
+    #     if pretrained:
+    #         model.load_state_dict(torch.load(path)) 
+
+    #     if mode == 'train':
+    #         model.train()
+    #     elif mode == 'eval':
+    #         model.eval()
+    #         for param in model.parameters():
+    #             param.requires_grad = False
+        
+
+    if arch == "Magface":
+        #TODO: rewrite args according with original finetuner.py
+        #TODO: understand the difference between the ways of loading model
+        # if mode == 'train':
+        #     model = magface.builder(args)
+        #     model = magface.models.magface.load_dict_inf(args, model)
+        #     for param in model.parameters():
+        #         param.requires_grad = False
+
+        #     # replace layers for small features
+        #     model.features.fc = nn.Linear(in_features=model.features.fc.in_features, out_features=128, bias=True)
+        #     model.features.features = nn.BatchNorm1d(128, eps=model.features.features.eps, momentum=0.9, affine=True, track_running_stats=True)
+        #     model.fc = magface.MagLinear(in_features=128, out_features=args.last_fc_size)
+
+        if mode == 'eval':
+            if embedding_size == 512:
+                path = '/home/akasaka/nas/models/magface_epoch_00025.pth'
+                args = easydict.EasyDict({
+                    'arch':'iresnet100',
+                    'cpu_mode':True,
+                    'resume':path,
+                    'embedding_size':embedding_size,
+                    'last_fc_size':85742,
+                    })
+                model = network_inf.NetworkBuilder_inf(args)
+                model = network_inf.load_dict_inf(args, model)
+                load_status = 'Successfully Loaded'
+
+            elif embedding_size == 128:
+                args = easydict.EasyDict({
+                    'arch':'iresnet100',
+                    'cpu_mode':True,
+                    'resume':path,
+                    'embedding_size':embedding_size,
+                    'last_fc_size':85742,
+                    })
+                model = network_inf.NetworkBuilder_inf(args)
+                model.fc = magface.MagLinear(in_features=embedding_size, out_features=args.last_fc_size)
+                load_status = model.load_state_dict(torch.load(args.resume)['state_dict'])
+                model.fc = nn.Identity()
+            
+            model.eval()
+            for param in model.parameters():
+                param.requires_grad = False
+
+    params_to_update = []
+    for name, param in model.named_parameters():
+        if param.requires_grad == True:
+            params_to_update.append(param)
+    if params_to_update == []:
+        params_to_update = model.parameters()
+    
+    cprint(f'{arch} is loaded', 'green')
+    cprint(f'path:{path}', 'green')
+    cprint(f'train mode:{model.training}', 'green')
+    cprint(f'pretrained:{load_status}', 'green')
+    cprint(f'embedding size:{get_output_shape(model, get_img_size(arch))[1]}\n', 'green')
+
+    return model, params_to_update
+
+def load_autoencoder(pretrained: bool, model_path: str, mode: str, ver:int):
+    if not mode in ['train', 'eval']:
+        raise("Model mode is incorrect")
+    model = AutoEncoder(ver)
+    if pretrained:
+        model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
+    if mode == 'train':
+        for param in model.parameters():
+            param.requires_grad = True
+        model.train()
+    elif mode == 'eval':
+        for param in model.parameters():
+            param.requires_grad = False
+        model.eval()
+        
+    return model
+
+
+def get_output_shape(model, image_dim):
+    return model(torch.rand(2, 3, image_dim ,image_dim)).data.shape
+
+def get_img_size(model: str) -> int:
+    assert model in ["FaceNet", "Arcface", "Magface"]
+    if model == "FaceNet":
+        img_size = 160
+    if model == "Arcface":
+        img_size = 112
+    if model == "Magface":
+        img_size = 112
+    
+    return img_size
+
+def load_attacker_discriminator(path: str, input_dim: int, network_dim: int, img_shape: Tuple[int, int, int]) -> nn.Module:
+    D = Discriminator3(input_dim=input_dim, network_dim=network_dim, img_shape=img_shape)
+    D.load_state_dict(torch.load(path))
+
+    for param in D.parameters():
+        param.requires_grad = False
+    
+    D.eval()
+
+    return D
+
+def load_attacker_generator(path: str, latent_dim: int, network_dim:int, img_shape: Tuple[int, int, int]) -> nn.Module:
+    G = Generator3(latent_dim=latent_dim, network_dim=network_dim ,img_shape=img_shape)
+    G.load_state_dict(torch.load(path))
+
+    for param in G.parameters():
+        param.requires_grad = False
+    
+    G.eval()
+
+    return G
+
+class BatchLoader:
+    def __init__(self, x: list, batch_size: int):
+        self.x = x
+        self.batch_size = batch_size
+
+        self.idx = list(range(len(self.x)))
+        self.current = 0
+
+    def __iter__(self):
+        self.idx = list(range(len(self.x)))
+        self.current = 0
+        return self
+
+    def __next__(self):
+        start = self.batch_size * self.current 
+        end = self.batch_size * (self.current + 1)
+
+        if start >= len(self.x):
+            raise StopIteration()
+
+        self.current += 1
+
+        return self.x[start:end]
+
+def extract_features_from_nnModule(
+                     batch: Any,
+                     model: nn.Module,
+                     layer_name: str,
+                     device: Any):
+
+    features = model(batch.to(device))
+    if type(features) == dict:
+        features = features[layer_name]
+    features.detach().to(device)
+
+    return features
+
+def get_memory_usage():
+    memory_available = np.empty(3)
+    for i in range(3):
+        os.system(f'nvidia-smi -i {i} -q -d Memory |grep -A4 GPU|grep Free >tmp')
+        lines = open('tmp', 'r').readlines()
+        if lines == []:
+            memory_available[i] = 0
+        else:
+            for x in lines:
+                memory_available[i] = re.sub(r"\D", "", x)
+
+    return memory_available
+
+def get_freer_gpu():
+    memory_available = np.empty(3)
+    for i in range(3):
+        os.system(f'nvidia-smi -i {i} --query-gpu=utilization.gpu --format=csv | grep %> tmp')
+        lines = open('tmp', 'r').readlines()
+        if lines == []:
+            memory_available[i] = 100
+        else:
+            memory_available[i] = re.sub(r"\D", "", lines[1])
+
+    freest_gpu = np.argmin(memory_available)
+
+    if freest_gpu > 5:
+        return -1
+
+    for i in range(torch.cuda.device_count()):
+        memory_available_before = get_memory_usage()
+        device = f'cuda:{i}'
+        tmp = torch.tensor([1]).to(device)
+        memory_available_after = get_memory_usage()
+        gpu_idx = np.argmax(memory_available_before - memory_available_after)
+        del tmp
+        torch.cuda.empty_cache()
+        if gpu_idx == freest_gpu:
+            return i
+
+class RandomBatchLoader:
+    def __init__(self, x: torch.Tensor, batch_size: int):
+        self.x = x
+        self.batch_size = batch_size
+
+        self.idx = torch.randperm(self.x.shape[0])
+        self.current = 0
+
+    def __iter__(self):
+        self.idx = torch.randperm(self.x.shape[0])
+        self.current = 0
+        return self
+
+    def __next__(self):
+        start = self.batch_size * self.current 
+        end = self.batch_size * (self.current + 1)
+
+        if start >= self.x.shape[0]:
+            raise StopIteration()
+
+        self.current += 1
+
+        mask = self.idx[start:end]
+
+        return self.x[mask]

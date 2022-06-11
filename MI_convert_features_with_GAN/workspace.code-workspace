@@ -1,0 +1,20 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../OhkiCodes"
+		},
+		{
+			"path": "../pytorch-examples"
+		},
+		{
+			"path": "../singularity-containers"
+		},
+		{
+			"path": "../experiment"
+		}
+	],
+	"settings": {}
+}

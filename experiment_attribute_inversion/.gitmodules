@@ -1,0 +1,3 @@
+[submodule "arcface_pytorch"]
+	path = arcface_pytorch
+	url = https://github.com/TreB1eN/InsightFace_Pytorch

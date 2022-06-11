@@ -1,0 +1,26 @@
+{
+    "age": [
+        "0-2",
+        "10-19",
+        "20-29",
+        "30-39",
+        "3-9",
+        "40-49",
+        "50-59",
+        "60-69",
+        "more than 70"
+    ],
+    "gender":[
+        "Male",
+        "Female"
+    ],
+    "race":[
+        "Black",
+        "East Asian",
+        "Indian",
+        "Latino_Hispanic",
+        "Middle Eastern",
+        "Southeast Asian",
+        "White"
+    ]
+}
