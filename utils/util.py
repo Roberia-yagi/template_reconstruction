@@ -297,13 +297,12 @@ def extract_features_from_nnModule(
 def get_memory_usage():
     memory_available = np.empty(3)
     for i in range(3):
-        os.system(f'nvidia-smi -i {i} -q -d Memory |grep -A4 GPU|grep Free >tmp')
+        os.system(f'nvidia-smi -i {i} -q -d Memory |grep -A5 GPU|grep Free >tmp')
         lines = open('tmp', 'r').readlines()
         if lines == []:
             memory_available[i] = 0
         else:
             for x in lines:
-                print(x)
                 memory_available[i] = re.sub(r"\D", "", x)
 
     return memory_available
@@ -320,9 +319,6 @@ def get_freer_gpu():
 
     freest_gpu = np.argmin(memory_available)
 
-    print(memory_available)
-    print(freest_gpu)
-
     if freest_gpu > 5:
         return -1
 
@@ -331,12 +327,9 @@ def get_freer_gpu():
         device = f'cuda:{i}'
         tmp = torch.tensor([1]).to(device)
         memory_available_after = get_memory_usage()
-        print(memory_available_before)
-        print(memory_available_after)
         gpu_idx = np.argmax(memory_available_before - memory_available_after)
         del tmp
         torch.cuda.empty_cache()
-        print(gpu_idx)
         if gpu_idx == freest_gpu:
             return i
     
