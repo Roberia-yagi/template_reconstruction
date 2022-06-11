@@ -37,13 +37,6 @@ def main():
     # Create MTCNN
     mtcnn = MTCNN()
 
-    # Create transform for fallback
-    # transform = transforms.Compose([
-    #     transforms.CenterCrop(image_crop_size),
-    #     transforms.Resize((image_size, image_size)),
-    #     transforms.ToTensor(),
-    # ])
-
     foldernames = glob(dataset_in_dir + '/*')
 
     # change the range to variable
@@ -52,7 +45,6 @@ def main():
         os.makedirs(out_folder_path, exist_ok=True)
         for filename in glob(foldername + '/*'):
             out_path = resolve_path(out_folder_path, filename[filename.rfind('/')+1:])
-            # print(out_path)
 
             img = Image.open(filename)
             if img.mode == 'RGB':

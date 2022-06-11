@@ -19,18 +19,21 @@ class LFW(torch.utils.data.Dataset):
         # sorted  = False
     ) -> None:
         self.base_dir = base_dir
-        self.filepaths = glob.glob(base_dir + '/*')
+        self.folder_paths= glob.glob(base_dir + '/*')
+        self.file_paths = []
         self.transform = transform
 
-        for i, filepath in enumerate(self.filepaths):
-            self.filepaths[i] = filepath[filepath.rfind('/')+1:]
-
+        for i, folder_path in enumerate(self.folder_paths):
+            for file_path in glob.glob(folder_path + '/*'):
+                self.file_paths.append(file_path[file_path.rfind('/')+1:])
+            
     def __len__(self) -> int:
-        return len(self.filepaths)
+        return len(self.file_paths)
 
     def __getitem__(self, index: int) -> Tuple[Any, Any]:
-        data = PIL.Image.open(resolve_path(self.base_dir, self.filepaths[index]))
-        label = self.filepaths[index]
+        data = PIL.Image.open(resolve_path(self.base_dir,
+            self.file_paths[index][:self.file_paths[index].rfind('_')], self.file_paths[index]))
+        label = self.file_paths[index]
 
         if self.transform is not None:
             data = self.transform(data)
@@ -38,7 +41,7 @@ class LFW(torch.utils.data.Dataset):
         return data, label
 
 def main():
-    LFW(base_dir='../../dataset/LFWA/lfw-deepfunneled-MTCNN160')
+    dataset = LFW(base_dir='../../dataset/LFWA/lfw-deepfunneled_MTCNN160')
 
 if __name__=='__main__':
     main()

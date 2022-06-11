@@ -87,9 +87,7 @@ def get_best_image(FE: nn.Module, images: nn.Module, image_size: int, all_target
 def set_global():
     global options
     global device
-    global metric
     options = get_options()
-    metric = nn.CosineSimilarity(dim=1)
 
     gpu_idx = get_freer_gpu()
     device = f"cuda:{gpu_idx}" if torch.cuda.is_available() else "cpu"

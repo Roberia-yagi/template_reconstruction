@@ -17,8 +17,9 @@ from torch import optim
 from torchvision import transforms
 from torchvision.utils import save_image
 
-from utils.util import (save_json, load_json, create_logger, resolve_path, RandomBatchLoader,
-    load_model_as_feature_extractor, load_attacker_discriminator, load_attacker_generator, get_img_size)
+from utils.util import (save_json, load_json, create_logger, resolve_path, RandomBatchLoader, get_freer_gpu,
+    load_model_as_feature_extractor, load_attacker_discriminator, load_attacker_generator, get_img_size,
+    extract_target_features)
 
 from utils.pytorch_GAN_zoo.hubconf import StyleGAN
 
@@ -86,6 +87,15 @@ def get_best_image(T: nn.Module, images: nn.Module, image_size: int, all_target_
     bestImageIndex = sum_of_cosine_similarity.argmax()
     return images[bestImageIndex], sum_of_cosine_similarity[bestImageIndex]
 
+def set_global():
+    global options
+    global device
+    options = get_options()
+
+    gpu_idx = get_freer_gpu()
+    device = f"cuda:{gpu_idx}" if torch.cuda.is_available() else "cpu"
+
+    options.device = device
 
 def main():
     options = get_options()
@@ -153,24 +163,8 @@ def main():
     G.eval()
     T.eval()
 
-    target_imagefolder_path = resolve_path(options.target_image_dir, options.target_dir_name)
-    all_target_images = torch.tensor([]).to(device)
-    all_target_features = torch.tensor([]).to(device)
-    resize = transforms.Resize((img_size, img_size))
-    convert_tensor = transforms.ToTensor()
-
-    # Convert all taget images in target imagefolder to features
-    for filename in glob.glob(target_imagefolder_path + "/*.*"):
-        target_image = PIL.Image.open(filename)
-        converted_target_image = convert_tensor(target_image)
-        converted_target_image = resize(converted_target_image).to(device)
-        all_target_images= torch.cat((all_target_images, converted_target_image.unsqueeze(0)))
-
-        target_feature = T(converted_target_image.view(1, -1, img_size, img_size)).detach().to(device)
-        all_target_features= torch.cat((all_target_features, target_feature.unsqueeze(0)))
-
-        if options.single_mode:
-            break
+    all_target_images, all_target_features = extract_target_features(T, img_size,
+        options.target_image_dir, options.target_dir_name, options.single_mode, device)
 
     # Search z^
     z = torch.randn(options.batch_size * options.iterations, options.latent_dim, requires_grad=True, device=device)
