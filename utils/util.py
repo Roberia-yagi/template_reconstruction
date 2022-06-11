@@ -333,6 +333,7 @@ def get_freer_gpu():
         gpu_idx = np.argmax(memory_available_before - memory_available_after)
         del tmp
         torch.cuda.empty_cache()
+        print(gpu_idx)
         if gpu_idx == freest_gpu:
             return i
     
