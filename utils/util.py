@@ -303,6 +303,7 @@ def get_memory_usage():
             memory_available[i] = 0
         else:
             for x in lines:
+                print(x)
                 memory_available[i] = re.sub(r"\D", "", x)
 
     return memory_available
