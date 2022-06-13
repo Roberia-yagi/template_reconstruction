@@ -124,13 +124,15 @@ def main():
         path=resolve_path(options.GAN_dir, "D.pth"),
         input_dim=GAN_options["img_channels"],
         network_dim=GAN_options["D_network_dim"],
-        img_shape=img_shape_T
+        img_shape=img_shape_T,
+        device=device
     ).to(device)
     G = load_attacker_generator(
         path=resolve_path(options.GAN_dir, "G.pth"),
         latent_dim=GAN_options["latent_dim"],
         network_dim=GAN_options["G_network_dim"],
-        img_shape=img_shape_T
+        img_shape=img_shape_T,
+        device=device
     ).to(device)
     T, _ = load_model_as_feature_extractor(
         arch=options.target_model,
