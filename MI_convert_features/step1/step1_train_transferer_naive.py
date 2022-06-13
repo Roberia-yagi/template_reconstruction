@@ -44,7 +44,7 @@ def get_options() -> Any:
     # Timestamp
     time_stamp = datetime.datetime.now().strftime("%Y_%m_%d_%H_%M")
     parser.add_argument("--identifier", type=str, default=time_stamp, help="timestamp")
-    parser.add_argument("--gpu_idx", type=int, default=0, help="index of cuda devices")
+    parser.add_argument("--gpu_idx", type=int, default=1, help="index of cuda devices")
 
     # Save
     parser.add_argument("--log_interval", type=int, default=100, help="interval between logs (per iteration)")

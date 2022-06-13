@@ -151,8 +151,8 @@ def main():
     threshold_idx = np.argmin(fpr - tpr)
     threshold = thresholds[threshold_idx]
 
-    print(cossims.mean())
-    print(f'Attack acc.: {(cossims > threshold).sum()/len(cossims)}')
+    logger.info(f'The average of cosine similarity: {cossims.mean()}')
+    logger.info(f'Attack acc.: {(cossims > threshold).sum()/len(cossims)}')
 
 if __name__ == '__main__':
 	main()

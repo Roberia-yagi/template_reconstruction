@@ -24,10 +24,10 @@ def get_options() -> Any:
     # Timestamp
     time_stamp = datetime.datetime.now().strftime("%Y_%m_%d_%H_%M")
     parser.add_argument("--identifier", type=str, default=time_stamp, help="timestamp")
-    parser.add_argument("--gpu_idx", type=int, default=0, help="index of cuda devices")
+    parser.add_argument("--gpu_idx", type=int, default=1, help="index of cuda devices")
     
     # Dir
-    parser.add_argument("--result_dir", type=str, default="../../..//results/dataset_reconstructed", help="path to directory which includes results")
+    parser.add_argument("--result_dir", type=str, default="../../../results/dataset_reconstructed", help="path to directory which includes results")
     parser.add_argument("--step1_dir", type=str, required=True, help="path to directory which includes the step1 result")
     parser.add_argument("--GAN_dir", type=str, default="../../../results/common/step2/pure_facenet_500epoch_features", help="path to directory which includes the step1 result")
     parser.add_argument('--target_model_path', default='', type=str, help='path to pretrained target model')
@@ -89,8 +89,9 @@ def set_global():
     global device
     options = get_options()
 
-    gpu_idx = get_freer_gpu()
-    device = f"cuda:{gpu_idx}" if torch.cuda.is_available() else "cpu"
+    # gpu_idx = get_freer_gpu()
+    # device = f"cuda:{gpu_idx}" if torch.cuda.is_available() else "cpu"
+    device = f"cuda:{options.gpu_idx}" if torch.cuda.is_available() else "cpu"
 
     options.device = device
 
