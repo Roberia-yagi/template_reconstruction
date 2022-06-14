@@ -47,13 +47,14 @@ class CasiaWebFace(torch.utils.data.Dataset):
         identities_counter = 0
         for folder in folder_list:
             file_list = glob(folder + '/*')
+            labels = folder[folder.rfind('/')+1:]
             if len(file_list) >= num_per_identity and num_of_identities > identities_counter:  
                 self.filenames.extend(file_list[:num_per_identity])
-                self.labels.extend([folder] * num_per_identity)
+                self.labels.extend([labels] * num_per_identity)
                 identities_counter += 1
             else:
                 self.test_filenames.extend(file_list[:num_per_identity])
-                self.test_labels.extend([folder] * len(file_list))
+                self.test_labels.extend([labels] * len(file_list))
 
         divider = int(len(self.filenames)/10)
 
@@ -92,14 +93,10 @@ class CasiaWebFace(torch.utils.data.Dataset):
 
 def main():
     dataset = CasiaWebFace(base_dir='../../dataset/CASIAWebFace',
-                           usage='train',
-                           identity_size=18)
-    dataset = CasiaWebFace(base_dir='../../dataset/CASIAWebFace',
-                           usage='test',
-                           identity_size=18)
-    dataset = CasiaWebFace(base_dir='../../dataset/CASIAWebFace',
                            usage='valid',
-                           identity_size=18)
+                           num_of_identities=100,
+                           num_per_identity=10)
+    print(dataset[0])
 
 if __name__ == '__main__':
 	main()

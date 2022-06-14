@@ -1,8 +1,8 @@
 # Train converter
+import pickle
 import sys
 
 from sklearn import datasets
-
 
 sys.path.append("../")
 sys.path.append("../../")
@@ -26,7 +26,7 @@ from utils.email_sender import send_email
 from sklearn.model_selection import train_test_split
 
 import torch
-from torch import nn
+from torch import cosine_similarity, nn
 from torch import optim
 from torch.utils.data import DataLoader
 from torchvision import transforms
@@ -35,8 +35,8 @@ from torchvision.utils import save_image
 from utils.celeba import CelebA 
 from utils.casia_web_face import CasiaWebFace
 
-from utils.util import (save_json, load_json, create_logger, resolve_path, load_model_as_feature_extractor, BatchLoader,
-    get_freer_gpu, get_img_size, extract_features_from_nnModule, load_autoencoder)
+from utils.util import (save_json, create_logger, resolve_path, load_model_as_feature_extractor,
+    get_img_size, load_autoencoder)
 
 def get_options() -> Any:
     parser = argparse.ArgumentParser()
@@ -76,6 +76,10 @@ def get_options() -> Any:
     parser.add_argument("--resume_epoch", type=int, help='flag of resume')
     parser.add_argument("--num_of_identities", type=int, default=7000, help="Number of unique identities")
     parser.add_argument("--num_per_identity", type=int, default=20, help="Number of unique identities")
+    parser.add_argument("--early_stop", type=int, default=5, help="the trial limitation of non-update training")
+    parser.add_argument("--negative_loss", action='store_true', help='flag of negative loss')
+    parser.add_argument("--num_of_samples", type=int, default=10, help="Number of samples for calculation of negative loss")
+    parser.add_argument("--gamma", type=int, default=-1, help='the optimal value of negative loss')
 
     opt = parser.parse_args()
 
@@ -100,40 +104,63 @@ def train_target(
     transform_T: transforms,
     transform_A: transforms,
     AE: nn.Module,
+    all_features_labels: tuple,
     criterion: nn.Module,
     optimizer: optim.Optimizer,
     logger: Logger,
     log_interval: int
 ) -> Tuple[float, float]:
     data_num = len(dataloader.dataset)
-    loss_avg = 0
+    loss_history = np.array([])
+    loss_same_history = np.array([])
+    loss_diff_history = np.array([])
+
+    other_features, other_labels = all_features_labels
 
     AE.train()
-    for i, (images, _) in enumerate(dataloader):
+    for i, (images, labels) in enumerate(dataloader):
         images = images.to(device)
-        # images = images.double().to(device)
 
         optimizer.zero_grad()
 
-        features_T = T(transform_T(images))
-        converted_features_in_A = AE(features_T)
-        features_A = A(transform_A(images))
-        loss = (1 - criterion(features_A, converted_features_in_A).mean()) / 2
+        target_features_T = T(transform_T(images))
+        converted_target_features_in_A = AE(target_features_T)
+        target_features_A = A(transform_A(images))
+        loss_same = (1 - criterion(target_features_A, converted_target_features_in_A).mean()) / 2
+        loss_diff = torch.tensor(0).to(device)
+
+        if options.negative_loss:
+            for target_feature, target_label in zip(converted_target_features_in_A, labels):
+                other_features, other_labels = all_features_labels
+                trimmed_other_features = other_features[other_labels != target_label]
+                weights = torch.tensor(np.full(trimmed_other_features.shape[0], 1/trimmed_other_features.shape[0]), dtype=torch.float)
+                index = weights.multinomial(num_samples=options.num_of_samples, replacement=True)
+                trimmed_other_features = trimmed_other_features[index]
+                expanded_target_feature = target_feature.expand(trimmed_other_features.shape[0], -1)
+                cossim = criterion(expanded_target_feature, trimmed_other_features.to(device))
+                loss_diff += torch.abs((options.gamma - cossim) / 2).mean()
+            loss_diff /= len(labels)
+
         # DELETE
         if i == 0:
-            cprint(converted_features_in_A, 'green')
-            cprint(features_A, 'red')
-        loss_avg += loss
+            cprint(converted_target_features_in_A, 'green')
+            cprint(target_features_A, 'red')
+        loss = (loss_same + loss_diff) / 2
+        loss_history = np.append(loss_history, torch.clone(loss).detach().cpu().numpy())
+        loss_same_history = np.append(loss_same_history, torch.clone(loss_same).detach().cpu().numpy())
+        loss_diff_history = np.append(loss_diff_history, torch.clone(loss_diff).detach().cpu().numpy())
         loss.backward()
 
         optimizer.step()
 
         if i % log_interval == 0:
-            logger.info(f"[Train] [Loss {loss.item():.8f}] [{i * len(images):5d}/{data_num:5d}]")
+            logger.info(f"[Train] [Loss {loss.item():.8f}] [Same Loss {loss_same.item():.8f}] [Diff Loss {loss_diff.item():.8f}] [{i * len(images):5d}/{data_num:5d}]")
 
-    loss_avg /= i
+    loss_avg = loss_history.mean()
+    loss_same_avg = loss_same_history.mean()
+    loss_diff_avg = loss_diff_history.mean()
 
-    logger.info(f"[Train avg] [Loss {loss_avg:.10f} (avg)]")
+    logger.info(f"[Train avg] [Loss {loss_avg:.10f} (avg)] [Same Loss {loss_same_avg:.10f} (avg)] [Diff Loss {loss_diff_avg:.10f} (avg)]")
 
     return loss_avg.item()
 
@@ -146,29 +173,79 @@ def eval_target(
     transform_T: transforms,
     transform_A: transforms,
     AE: nn.Module,
+    all_features_labels: tuple,
     criterion: nn.Module,
     logger: Logger
 ) -> Tuple[float, float]:
     data_num = len(dataloader.dataset)
-    loss_avg = 0
+    loss_history = np.array([])
+    loss_same_history = np.array([])
+    loss_diff_history = np.array([])
 
     AE.eval()
     with torch.no_grad():
-        for i, (images, _) in enumerate(dataloader):
+        for i, (images, labels) in enumerate(dataloader):
             images = images.to(device)
-            # images = images.double().to(device)
 
-            features_T = T(transform_T(images))
-            converted_features_in_A = AE(features_T)
-            features_A = A(transform_A(images))
-            loss = (1 - criterion(features_A, converted_features_in_A).mean()) / 2
-            loss_avg += loss
+            target_features_T = T(transform_T(images))
+            converted_target_features_in_A = AE(target_features_T)
+            target_features_A = A(transform_A(images))
+            loss_same = (1 - criterion(target_features_A, converted_target_features_in_A).mean()) / 2
+            loss_diff = torch.tensor(0).to(device)
 
-    loss_avg /= i
+            if options.negative_loss:
+                for target_feature, target_label in zip(converted_target_features_in_A, labels):
+                    # other_features, other_labels = all_features_labels
+                    # trimmed_other_features = other_features[other_labels != target_label]
+                    # weights = torch.tensor(np.full(trimmed_other_features.shape[0], 1/trimmed_other_features.shape[0]), dtype=torch.float)
+                    # index = weights.multinomial(num_samples=10, replacement=True)
+                    # trimmed_other_features = trimmed_other_features[index]
+                    # expanded_target_feature = target_feature.expand(trimmed_other_features.shape[0], -1)
+                    # cossim = criterion(expanded_target_feature, trimmed_other_features.to(device))
+                    # loss_diff += torch.abs((options.gamma - cossim) / 2).mean()
+                    other_features, other_labels = all_features_labels
+                    trimmed_other_features = other_features[other_labels != target_label]
+                    weights = torch.tensor(np.full(trimmed_other_features.shape[0], 1/trimmed_other_features.shape[0]), dtype=torch.float)
+                    index = weights.multinomial(num_samples=options.num_of_samples, replacement=True)
+                    trimmed_other_features = trimmed_other_features[index]
+                    expanded_target_feature = target_feature.expand(trimmed_other_features.shape[0], -1)
+                    cossim = criterion(expanded_target_feature, trimmed_other_features.to(device))
+                    loss_diff += torch.abs((options.gamma - cossim) / 2).mean()
+                loss_diff /= len(labels)
 
-    logger.info(f"[{mode} avg] [Loss {loss_avg:.10f} (avg)]")
+        loss = (loss_same + loss_diff) / 2
+        loss_history = np.append(loss_history, torch.clone(loss).detach().cpu().numpy())
+        loss_same_history = np.append(loss_same_history, torch.clone(loss_same).detach().cpu().numpy())
+        loss_diff_history = np.append(loss_diff_history, torch.clone(loss_diff).detach().cpu().numpy())
+
+    loss_avg = loss_history.mean()
+    loss_same_avg = loss_same_history.mean()
+    loss_diff_avg = loss_diff_history.mean()
+
+    logger.info(f"[{mode} avg] [Loss {loss_avg:.10f} (avg)] [Same Loss {loss_same_avg:.10f} (avg)] [Diff Loss {loss_diff_avg:.10f} (avg)]")
 
     return loss_avg.item()
+
+def calculate_features_from_dataset(model, dataloader, transform, usage):
+    all_features = torch.tensor([])
+    all_labels = np.array([])
+    dataset_name = options.dataset_dir[options.dataset_dir.rfind('/')+1:]
+    pkl_path = resolve_path(f'{options.result_dir}_negative_loss', f'{usage}_{dataset_name}_{options.num_of_identities}_{options.num_per_identity}_identities.pkl')
+    if os.path.exists(pkl_path):
+        with open(pkl_path, 'rb') as f:
+            all_features, all_labels = pickle.load(f)
+            print(f'{usage} features are loaded by pickle')
+    else:
+        for images, labels in tqdm(dataloader):
+            images = images.to(device)
+            features = model(transform(images)).detach().cpu()
+            all_features = torch.concat((all_features, features))
+            all_labels = np.append(all_labels, labels)
+        with open(pkl_path, 'wb') as f:
+            pickle.dump((all_features, all_labels), f)
+            print(f'{usage} features are calculated and saved as pickle')
+
+    return all_features,all_labels 
 
 
 def set_global():
@@ -195,9 +272,13 @@ def main():
             exit(1)
 
     # Create directory to save results
-    result_dir = resolve_path(options.result_dir, (options.identifier + f'_{options.num_of_identities}_identities'))
+    if options.negative_loss:
+        result_dir = resolve_path(f'{options.result_dir}_negative_loss', (options.identifier + f'_{options.num_of_identities}_identities'))
+    else:
+        result_dir = resolve_path(options.result_dir, (options.identifier + f'_{options.num_of_identities}_identities'))
+
     if os.path.exists(result_dir):
-        result_dir = result_dir + randint(0, 1e9)
+        result_dir = result_dir + str(randint(0, 1e9))
         os.makedirs(result_dir, exist_ok=False)
     else:
         os.makedirs(result_dir, exist_ok=False)
@@ -297,6 +378,10 @@ def main():
     optimizer = optim.Adam(AE.parameters(), lr=options.learning_rate, betas=(options.beta1, options.beta2), weight_decay=options.weight_decay)
     criterion = nn.CosineSimilarity()
 
+    # Calculate features for negative loss calculation
+    features_train, labels_train = calculate_features_from_dataset(A, train_dataloader, transform_A, 'train')
+    features_test, labels_test= calculate_features_from_dataset(A, test_dataloader, transform_A, 'test')
+    features_val, labels_val= calculate_features_from_dataset(A, val_dataloader, transform_A, 'valid')
 
     # Train, valid, test model
     best_model_wts = copy.deepcopy(AE.state_dict())
@@ -308,9 +393,9 @@ def main():
     else:
         start_epoch = 0
     for epoch in range(start_epoch + 1, options.n_epochs + 1):
-        if loss_update_counter > 10:
+        if loss_update_counter > options.early_stop:
             break
-        logger.info(f"[Epoch {epoch:d}/{options.n_epochs:d}]")
+        logger.info(f"[Epoch {epoch:d}")
         epoch_start_time = time.time()
 
         # Load best model
@@ -324,6 +409,7 @@ def main():
             transform_T,
             transform_A,
             AE,
+            (features_train, labels_train),
             criterion,
             optimizer,
             logger,
@@ -339,6 +425,7 @@ def main():
             transform_T,
             transform_A,
             AE,
+            (features_val, labels_val),
             criterion,
             logger
         )
@@ -352,6 +439,7 @@ def main():
             transform_T,
             transform_A,
             AE,
+            (features_test, labels_test),
             criterion,
             logger
         )
