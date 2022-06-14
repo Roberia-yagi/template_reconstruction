@@ -45,9 +45,9 @@ def get_options() -> Any:
     # Directories
     parser.add_argument("--result_dir", type=str, default="~/nas/results/show_transferer_acc_with_hist", help="path to directory which includes results")
     parser.add_argument("--step1_dirs", nargs='+', required=True, help="path to directory which includes the step1 result")
-    parser.add_argument("--same_pickle_path", type=str, default='/home/akasaka/nas/results/show_model_acc_with_hist/2022_06_05_04_34_Original_with_pickle/FaceNet_same_cossim.pkl',
+    parser.add_argument("--same_pickle_path", type=str, default='/home/akasaka/nas/results/show_model_acc_with_hist/2022_06_05_04_34_Original_Facenet_with_pickle/FaceNet_same_cossim.pkl',
                         help="path to directory which includes the pickle of original data")
-    parser.add_argument("--diff_pickle_path", type=str, default='/home/akasaka/nas/results/show_model_acc_with_hist/2022_06_05_04_34_Original_with_pickle/FaceNet_diff_cossim.pkl',
+    parser.add_argument("--diff_pickle_path", type=str, default='/home/akasaka/nas/results/show_model_acc_with_hist/2022_06_05_04_34_Original_Facenet_with_pickle/FaceNet_diff_cossim.pkl',
                         help="path to directory which includes the pickle of original data")
     parser.add_argument("--target_image_dir", type=str, default="~/nas/dataset/fairface/train", help="path to directory which contains target images")
     parser.add_argument('--target_model_path', default='',

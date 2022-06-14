@@ -127,7 +127,7 @@ def train_target(
         converted_target_features_in_A = AE(target_features_T)
         target_features_A = A(transform_A(images))
         loss_same = (1 - criterion(target_features_A, converted_target_features_in_A).mean()) / 2
-        loss_diff = torch.tensor(0).to(device)
+        loss_diff = torch.tensor(0.0, dtype=float).to(device)
 
         if options.negative_loss:
             for target_feature, target_label in zip(converted_target_features_in_A, labels):
@@ -191,7 +191,7 @@ def eval_target(
             converted_target_features_in_A = AE(target_features_T)
             target_features_A = A(transform_A(images))
             loss_same = (1 - criterion(target_features_A, converted_target_features_in_A).mean()) / 2
-            loss_diff = torch.tensor(0).to(device)
+            loss_diff = torch.tensor(0.0, dtype=float).to(device)
 
             if options.negative_loss:
                 for target_feature, target_label in zip(converted_target_features_in_A, labels):
