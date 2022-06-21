@@ -3,7 +3,7 @@ import torch.nn as nn
 class AutoEncoder(nn.Module):
     def __init__(self, ver:int):
         super(AutoEncoder, self).__init__()
-        if not ver in [1, 1.1, 1.2, 1.3, 1.4]:
+        if not ver in [1, 1.1, 1.2, 1.3, 1.4, 1.5]:
             raise("AutoEncoder version is illegal")
         if ver == 1:
             self.linear_relu_stack = nn.Sequential(
@@ -57,6 +57,16 @@ class AutoEncoder(nn.Module):
                 nn.Linear(256, 128),
                 nn.ReLU(),
                 nn.Linear(128, 128),
+            )
+        elif ver == 1.5:
+            self.linear_relu_stack = nn.Sequential(
+                nn.Linear(128, 128),
+                nn.ReLU(),
+                nn.Linear(128, 256),
+                nn.ReLU(),
+                nn.Linear(256, 512),
+                nn.ReLU(),
+                nn.Linear(512, 512),
             )
 
     def forward(self, x):

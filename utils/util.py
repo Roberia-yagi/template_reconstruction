@@ -19,7 +19,7 @@ import torchvision.transforms as transforms
 import numpy as np
 
 import facenet_pytorch
-import arcface_pytorch
+from arcface_pytorch.model import Backbone
 import magface_pytorch
 from magface_pytorch.inference import network_inf
 from magface_pytorch.models import magface 
@@ -27,7 +27,6 @@ from magface_pytorch.models import magface
 from my_models.AutoEncoder import AutoEncoder
 from my_models.Discriminator3 import Discriminator3
 from my_models.Generator3 import Generator3
-
 
 
 def save_json(path: str, obj: Any):
@@ -69,7 +68,7 @@ def extract_target_features(T, img_size, target_image_dir, target_dir_name, sing
     all_target_features = torch.tensor([]).to(device)
 
     # Convert all taget images in target imagefolder to features
-    for filename in glob.glob(target_imagefolder_path + "/*.*"):
+    for filename in glob.glob(target_imagefolder_path + "/best_image/*.*"):
         target_image = PIL.Image.open(filename)
         converted_target_image = convert_tensor(target_image)
         converted_target_image = resize(converted_target_image).to(device)
@@ -105,7 +104,7 @@ def load_model_as_feature_extractor(arch: str, embedding_size: int, mode: str, p
                 param.requires_grad = False
             model.last_linear = nn.Linear(in_features=1792, out_features=128, bias=False)
             model.last_bn = nn.BatchNorm1d(128, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
-            model.logits = nn.Linear(in_features=128, out_features=1000, bias=True)
+            model.logits = nn.Linear(in_features=128, out_features=44052, bias=True)
             if pretrained:
                 load_status = model.load_state_dict(torch.load(path)) 
         elif embedding_size == 512:
@@ -119,28 +118,30 @@ def load_model_as_feature_extractor(arch: str, embedding_size: int, mode: str, p
             for param in model.parameters():
                 param.requires_grad = False
 
-    # SET PATH BEFORE USE
-    # if arch == "Arcface":
-    #     model = arcface_pytorch.model.Backbone(num_layers=50, drop_ratio=0, mode='ir_se')
-    #     if embedding_size == 128:
-    #         # Finetuned
-    #         model = arcface_pytorch.model.Backbone(num_layers=50, drop_ratio=0, mode='ir_se')
-    #         for param in model.parameters():
-    #             param.requires_grad = False
-    #         model.output_layer[3]= torch.nn.Linear(in_features=model.output_layer[3].in_features,
-    #                                                 out_features=128,
-    #                                                 bias=True)
-    #         model.output_layer[4] = torch.nn.BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
-    #     model.load_state_dict(torch.load(path)) 
-    #     if pretrained:
-    #         model.load_state_dict(torch.load(path)) 
+    if arch == "Arcface":
+        if embedding_size == 512:
+            model = Backbone(num_layers=50, drop_ratio=0.6, mode='ir_se')
+            path = '../../models/arcface_ir_se50.pth'
+        elif embedding_size == 128:
+            # Finetuned
+            model = Backbone(num_layers=50, drop_ratio=0.6, mode='ir_se')
+            for param in model.parameters():
+                param.requires_grad = False
+            model.output_layer[3]= torch.nn.Linear(in_features=model.output_layer[3].in_features,
+                                                    out_features=128,
+                                                    bias=True)
+            model.output_layer[4] = torch.nn.BatchNorm1d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
 
-    #     if mode == 'train':
-    #         model.train()
-    #     elif mode == 'eval':
-    #         model.eval()
-    #         for param in model.parameters():
-    #             param.requires_grad = False
+        if pretrained:
+            model.load_state_dict(torch.load(path)) 
+            load_status = 'Successfully Loaded'
+
+        if mode == 'train':
+            model.train()
+        elif mode == 'eval':
+            model.eval()
+            for param in model.parameters():
+                param.requires_grad = False
         
 
     if arch == "Magface":

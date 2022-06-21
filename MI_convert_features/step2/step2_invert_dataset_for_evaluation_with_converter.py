@@ -47,7 +47,8 @@ def get_options() -> Any:
     parser.add_argument("--target_model", type=str, default="Magface", help="target model: 'FaceNet', 'Arcface', 'Magface")
     parser.add_argument("--attack_model", type=str, default="FaceNet", help="attack model: 'FaceNet', 'Arcface', 'Magface")
     parser.add_argument("--AE_ver", type=int, default=1.1, help="AE version: 1, 1.1, 1.2, 1.3, 1.4")
-    parser.add_argument("--embedding_size", type=int, default=512, help="embedding size of features of target model:[128, 512]")
+    parser.add_argument("--target_embedding_size", type=int, default=512, help="embedding size of features of target model:[128, 512]")
+    parser.add_argument("--attack_embedding_size", type=int, default=512, help="embedding size of features of target model:[128, 512]")
     parser.add_argument("--num_of_images", type=int, default=300, help="size of test dataset")
 
     opt = parser.parse_args()
@@ -136,14 +137,14 @@ def main():
     ).to(device)
     T, _ = load_model_as_feature_extractor(
         arch=options.target_model,
-        embedding_size=options.embedding_size,
+        embedding_size=options.target_embedding_size,
         mode='eval',
         path=options.target_model_path,
         pretrained=True
     )
     A, _ = load_model_as_feature_extractor(
         arch=options.attack_model,
-        embedding_size=options.embedding_size,
+        embedding_size=options.attack_embedding_size,
         mode='eval',
         path=options.attack_model_path,
         pretrained=True

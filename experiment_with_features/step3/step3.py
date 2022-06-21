@@ -98,11 +98,7 @@ def set_global():
     options.device = device
 
 def main():
-    options = get_options()
-
-    # Decide device
-    device = f"cuda:{options.gpu_idx}" if torch.cuda.is_available() else "cpu"
-    options.device = device
+    set_global()
 
     # Load step1 and step2 options
     step2_dir = "~/nas/results/common/step2/" + options.step2_dir
@@ -142,13 +138,15 @@ def main():
         path=resolve_path(step2_dir, "D.pth"),
         input_dim=step2_options["img_channels"],
         network_dim=step2_options["D_network_dim"],
-        img_shape=img_shape
+        img_shape=img_shape,
+        device=device
     ).to(device)
     G = load_attacker_generator(
         path=resolve_path(step2_dir, "G.pth"),
         latent_dim=options.latent_dim,
         network_dim=step2_options["G_network_dim"],
-        img_shape=img_shape
+        img_shape=img_shape,
+        device=device
     ).to(device)
     T, _ = load_model_as_feature_extractor(
         arch=options.target_model,

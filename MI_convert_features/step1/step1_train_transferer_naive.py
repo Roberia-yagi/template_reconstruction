@@ -8,19 +8,16 @@ sys.path.append("../")
 sys.path.append("../../")
 
 import os
-import itertools
 import argparse
 import copy
 import numpy as np
 from random import randint
 from termcolor import cprint
-import matplotlib.pyplot as plt
 import time
 import datetime
 from logging import Logger
 from tqdm import tqdm 
 from typing import Any, List, Tuple, Dict
-from torch.utils.data.dataset import Subset
 
 from utils.email_sender import send_email
 from sklearn.model_selection import train_test_split
@@ -32,11 +29,10 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 from torchvision.utils import save_image
 
-from utils.celeba import CelebA 
 from utils.casia_web_face import CasiaWebFace
 
 from utils.util import (save_json, create_logger, resolve_path, load_model_as_feature_extractor,
-    get_img_size, load_autoencoder)
+    get_img_size, load_autoencoder, get_freer_gpu)
 
 def get_options() -> Any:
     parser = argparse.ArgumentParser()
@@ -64,10 +60,11 @@ def get_options() -> Any:
 
 
     # Conditions of Model
-    parser.add_argument("--embedding_size", type=int, default=512, help="embedding size of features of target model:[128, 512]")
-    parser.add_argument("--target_model", type=str, default="Magface", help="target model: 'FaceNet', 'Arcface', 'Magface")
-    parser.add_argument("--attack_model", type=str, default="FaceNet", help="attack model: 'FaceNet', 'Arcface', 'Magface")
-    parser.add_argument("--AE_ver", type=int, default=1.1, help="AE version: 1, 1.1, 1.2, 1.3, 1.4")
+    parser.add_argument("--target_embedding_size", type=int, default=512, help="embedding size of features of target model:[128, 512]")
+    parser.add_argument("--attack_embedding_size", type=int, default=512, help="embedding size of features of target model:[128, 512]")
+    parser.add_argument("--target_model", type=str, default="FaceNet", help="target model: 'FaceNet', 'Arcface', 'Magface")
+    parser.add_argument("--attack_model", type=str, default="Magface", help="attack model: 'FaceNet', 'Arcface', 'Magface")
+    parser.add_argument("--AE_ver", type=float, default=1.1, help="AE version: 1, 1.1, 1.2, 1.3, 1.4")
 
     # Conditions of training
     parser.add_argument("--batch_size", type=int, default=64, help="size of the batches")
@@ -79,7 +76,6 @@ def get_options() -> Any:
     parser.add_argument("--early_stop", type=int, default=5, help="the trial limitation of non-update training")
     parser.add_argument("--negative_loss", action='store_true', help='flag of negative loss')
     parser.add_argument("--num_of_samples", type=int, default=10, help="Number of samples for calculation of negative loss")
-    parser.add_argument("--gamma", type=int, default=-1, help='the optimal value of negative loss')
 
     opt = parser.parse_args()
 
@@ -115,8 +111,6 @@ def train_target(
     loss_same_history = np.array([])
     loss_diff_history = np.array([])
 
-    other_features, other_labels = all_features_labels
-
     AE.train()
     for i, (images, labels) in enumerate(dataloader):
         images = images.to(device)
@@ -130,15 +124,20 @@ def train_target(
         loss_diff = torch.tensor(0.0, dtype=float).to(device)
 
         if options.negative_loss:
-            for target_feature, target_label in zip(converted_target_features_in_A, labels):
+            for converted_target_feature_in_A, target_feature_A, target_label in zip(converted_target_features_in_A, target_features_A, labels):
                 other_features, other_labels = all_features_labels
                 trimmed_other_features = other_features[other_labels != target_label]
+
+                # Sample other features
                 weights = torch.tensor(np.full(trimmed_other_features.shape[0], 1/trimmed_other_features.shape[0]), dtype=torch.float)
                 index = weights.multinomial(num_samples=options.num_of_samples, replacement=True)
                 trimmed_other_features = trimmed_other_features[index]
-                expanded_target_feature = target_feature.expand(trimmed_other_features.shape[0], -1)
-                cossim = criterion(expanded_target_feature, trimmed_other_features.to(device))
-                loss_diff += torch.abs((options.gamma - cossim) / 2).mean()
+
+                expanded_converted_target_feature_in_A = converted_target_feature_in_A.expand(trimmed_other_features.shape[0], -1)
+                expanded_target_feature_A = target_feature_A.expand(trimmed_other_features.shape[0], -1)
+                converted_cossim = criterion(expanded_converted_target_feature_in_A, trimmed_other_features.to(device))
+                cossim = criterion(expanded_target_feature_A, trimmed_other_features.to(device))
+                loss_diff += torch.abs((converted_cossim - cossim) / 2).mean()
             loss_diff /= len(labels)
 
         # DELETE
@@ -194,23 +193,20 @@ def eval_target(
             loss_diff = torch.tensor(0.0, dtype=float).to(device)
 
             if options.negative_loss:
-                for target_feature, target_label in zip(converted_target_features_in_A, labels):
-                    # other_features, other_labels = all_features_labels
-                    # trimmed_other_features = other_features[other_labels != target_label]
-                    # weights = torch.tensor(np.full(trimmed_other_features.shape[0], 1/trimmed_other_features.shape[0]), dtype=torch.float)
-                    # index = weights.multinomial(num_samples=10, replacement=True)
-                    # trimmed_other_features = trimmed_other_features[index]
-                    # expanded_target_feature = target_feature.expand(trimmed_other_features.shape[0], -1)
-                    # cossim = criterion(expanded_target_feature, trimmed_other_features.to(device))
-                    # loss_diff += torch.abs((options.gamma - cossim) / 2).mean()
+                for converted_target_feature_in_A, target_feature_A, target_label in zip(converted_target_features_in_A, target_features_A, labels):
                     other_features, other_labels = all_features_labels
                     trimmed_other_features = other_features[other_labels != target_label]
+
+                    # Sample other features
                     weights = torch.tensor(np.full(trimmed_other_features.shape[0], 1/trimmed_other_features.shape[0]), dtype=torch.float)
                     index = weights.multinomial(num_samples=options.num_of_samples, replacement=True)
                     trimmed_other_features = trimmed_other_features[index]
-                    expanded_target_feature = target_feature.expand(trimmed_other_features.shape[0], -1)
-                    cossim = criterion(expanded_target_feature, trimmed_other_features.to(device))
-                    loss_diff += torch.abs((options.gamma - cossim) / 2).mean()
+
+                    expanded_converted_target_feature_in_A = converted_target_feature_in_A.expand(trimmed_other_features.shape[0], -1)
+                    expanded_target_feature_A = target_feature_A.expand(trimmed_other_features.shape[0], -1)
+                    converted_cossim = criterion(expanded_converted_target_feature_in_A, trimmed_other_features.to(device))
+                    cossim = criterion(expanded_target_feature_A, trimmed_other_features.to(device))
+                    loss_diff += torch.abs((converted_cossim - cossim) / 2).mean()
                 loss_diff /= len(labels)
 
         loss = (loss_same + loss_diff) / 2
@@ -230,7 +226,7 @@ def calculate_features_from_dataset(model, dataloader, transform, usage):
     all_features = torch.tensor([])
     all_labels = np.array([])
     dataset_name = options.dataset_dir[options.dataset_dir.rfind('/')+1:]
-    pkl_path = resolve_path(f'{options.result_dir}_negative_loss', f'{usage}_{dataset_name}_{options.num_of_identities}_{options.num_per_identity}_identities.pkl')
+    pkl_path = resolve_path(f'{options.result_dir}_negative_loss', f'{usage}_{dataset_name}_{options.attack_model}_{options.num_of_identities}_{options.num_per_identity}_identities.pkl')
     if os.path.exists(pkl_path):
         with open(pkl_path, 'rb') as f:
             all_features, all_labels = pickle.load(f)
@@ -254,11 +250,11 @@ def set_global():
 
     options = get_options()
     # Decide device
-    # gpu_id = get_freer_gpu()
-    # device = f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu"
+    gpu_id = get_freer_gpu()
+    device = f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu"
 
     # Decide device
-    device = f"cuda:{options.gpu_idx}" if torch.cuda.is_available() else "cpu"
+    # device = f"cuda:{options.gpu_idx}" if torch.cuda.is_available() else "cpu"
 
     options.device = device
 
@@ -304,14 +300,14 @@ def main():
     )
     T, _ = load_model_as_feature_extractor(
         arch=options.target_model,
-        embedding_size=options.embedding_size,
+        embedding_size=options.target_embedding_size,
         mode='eval',
         path=options.target_model_path,
         pretrained=True
     )
     A, _ = load_model_as_feature_extractor(
         arch=options.attack_model,
-        embedding_size=options.embedding_size,
+        embedding_size=options.attack_embedding_size,
         mode='eval',
         path=options.attack_model_path,
         pretrained=True
@@ -379,9 +375,14 @@ def main():
     criterion = nn.CosineSimilarity()
 
     # Calculate features for negative loss calculation
-    features_train, labels_train = calculate_features_from_dataset(A, train_dataloader, transform_A, 'train')
-    features_test, labels_test= calculate_features_from_dataset(A, test_dataloader, transform_A, 'test')
-    features_val, labels_val= calculate_features_from_dataset(A, val_dataloader, transform_A, 'valid')
+    if options.negative_loss:
+        features_train, labels_train = calculate_features_from_dataset(A, train_dataloader, transform_A, 'train')
+        features_test, labels_test= calculate_features_from_dataset(A, test_dataloader, transform_A, 'test')
+        features_val, labels_val= calculate_features_from_dataset(A, val_dataloader, transform_A, 'valid')
+    else:
+        features_train, labels_train = None, None
+        features_test, labels_test= None, None
+        features_val, labels_val= None, None
 
     # Train, valid, test model
     best_model_wts = copy.deepcopy(AE.state_dict())

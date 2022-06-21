@@ -64,8 +64,9 @@ def get_options() -> Any:
     parser.add_argument("--identifier", type=str, default=time_stamp, help="timestamp")
     parser.add_argument("--result_dir", type=str, default="../../../results/evaluation_results", help="path to directory which includes results")
     parser.add_argument("--dataset_dir", type=str, default="../../../dataset/LFWA/lfw-deepfunneled-MTCNN160", help="path to dataset directory")
-    parser.add_argument("--step2_dir", type=str, required=True, help="path to directory which includes the step2 result")
+    parser.add_argument("--NbNet_dir", type=str, required=True, help="path to directory which includes the step2 result")
     parser.add_argument("--embedding_size", type=int, default=512, help="dimensionality of the latent space")
+    parser.add_argument("--target_model", type=str, default="FaceNet", help="target model: 'FaceNet', 'Arcface', 'Magface")
     parser.add_argument("--target_model_path", type=str, help='path to pretrained model')
     parser.add_argument("--same_pickle_path", type=str, default='/home/akasaka/nas/results/show_model_acc_with_hist_LFW/2022_06_21_11_01/Magface_same_cossim.pkl',
                         help="path to directory which includes the pickle of original data")
@@ -89,8 +90,7 @@ def main():
     set_global()
     # Create directory to save results
 
-    step2_dir = options.step2_dir[options.step2_dir.rfind('/'):][18:]
-    result_dir = resolve_path(options.result_dir, (options.identifier + '_' + step2_dir))
+    result_dir = resolve_path(options.result_dir, options.identifier)
     os.makedirs(result_dir, exist_ok=True)
 
     # Save options by json format
@@ -99,17 +99,15 @@ def main():
     # Create logger
     logger = create_logger(f"Step 3", resolve_path(result_dir, "reconstruction.log"))
 
-    step2_dir = options.step2_dir
-    step2_options = load_json(resolve_path(step2_dir, "step2.json"))
 
     # Log options
     logger.info(vars(options))
 
     # Load models
-    img_size_T = get_img_size(step2_options['target_model'])
 
+    img_size_T = get_img_size(options.target_model)
     T, _ = load_model_as_feature_extractor(
-        arch=step2_options['target_model'],
+        arch=options.target_model,
         embedding_size=options.embedding_size,
         mode='eval',
         path=options.target_model_path,
@@ -128,21 +126,20 @@ def main():
     criterion = torch.nn.CosineSimilarity(dim=2)
 
     # calculate Inception score
-    inception_score = calculate_inception_score(resolve_path(options.step2_dir, 'best_images'))
+    inception_score = calculate_inception_score(resolve_path(options.NbNet_dir, 'best_images'))
     logger.info(f'inception score is {inception_score}')
 
     # Compare reconstructed image with original image
     cossims = np.array([])
     max__ = 0
-    for folder_path in tqdm(glob.glob(options.step2_dir + '/*/')):
+    for folder_path in tqdm(glob.glob(options.NbNet_dir + '/*/')):
         folder_name = folder_path[folder_path[:-1].rfind('/')+1:-1]
         if folder_name == 'best_images':
             continue
-        identity_name = folder_name[:folder_name.rfind('_')]
-        target_image = PIL.Image.open(resolve_path(options.dataset_dir, identity_name, folder_name + '.jpg'))
+        target_image = PIL.Image.open(resolve_path(options.dataset_dir, folder_name, folder_name + '_0001.jpg'))
         target_feature = T(transform_T(target_image).to(device).unsqueeze(0)).unsqueeze(0)
         _, reconstructed_features = extract_target_features(T, img_size_T,
-            options.step2_dir, folder_name, True, device)
+            options.NbNet_dir, folder_name, True, device)
         cossims = np.append(cossims, criterion(target_feature.cpu(), reconstructed_features.cpu()))
 
     x, _, p = plt.hist(cossims,  bins=50, alpha=0.3, color='g', edgecolor='k', label='reconstructed')
@@ -168,7 +165,7 @@ def main():
     plt.ylabel("Freq")
     plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1))
     plt.ylim(0, max__)
-    plt.savefig(resolve_path(result_dir, f'{step2_options["target_model"]}_{options.embedding_size}_hist.png'), bbox_inches='tight')
+    plt.savefig(resolve_path(result_dir, f'{options.target_model}_{options.embedding_size}_hist.png'), bbox_inches='tight')
     plt.clf()
 
     # Calculate fpr, tpr, threshold

@@ -16,6 +16,7 @@ from typing import Any
 
 import torch
 import torchvision.transforms as transforms
+from torchvision import datasets
 from torch.utils.data import DataLoader
 from sklearn.metrics import roc_curve
 from utils.celeba import CelebA
@@ -35,9 +36,9 @@ def get_options() -> Any:
     # Directories
     time_stamp = datetime.datetime.now().strftime("%Y_%m_%d_%H_%M")
     parser.add_argument("--identifier", type=str, default=time_stamp, help="timestamp")
-    parser.add_argument("--result_dir", type=str, default="~/nas/results/show_model_acc_with_hist",
+    parser.add_argument("--result_dir", type=str, default="~/nas/results/show_model_acc_with_hist_LFW",
                         help="path to directory which includes results")
-    parser.add_argument("--dataset_dir", type=str, default="~/nas/dataset/CelebA_MTCNN160", help="path to directory which includes dataset(Fairface)")
+    parser.add_argument("--dataset_dir", type=str, default="/home/akasaka/nas/dataset/LFWA/lfw-deepfunneled-MTCNN160", help="path to directory which includes dataset(Fairface)")
 
 
     # System preferences
@@ -85,18 +86,21 @@ def set_global():
 
     options = get_options()
     # Decide device
-    device = f"cuda:{options.gpu_idx}" if torch.cuda.is_available() else "cpu"
+    # device = f"cuda:{options.gpu_idx}" if torch.cuda.is_available() else "cpu"
 
-    # gpu_id = get_freer_gpu()
-    # device = f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu"
+    gpu_id = get_freer_gpu()
+    device = f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu"
 
     options.device = device
 
+
+def fixed_image_standardization(image_tensor):
+    processed_tensor = (image_tensor - 127.5) / 128.0
+    return processed_tensor
+
+
 def main():
     set_global()
-
-if __name__ == '__main__':
-    main()
 
     # Create directory to save results
     result_dir = resolve_path(options.result_dir, options.identifier)
@@ -114,7 +118,7 @@ if __name__ == '__main__':
     # Load models
     img_size = get_img_size(options.target_model)
 
-    model, params_to_update = load_model_as_feature_extractor(
+    model, _ = load_model_as_feature_extractor(
         arch=options.target_model,
         embedding_size=options.embedding_size,
         mode='eval',
@@ -124,16 +128,22 @@ if __name__ == '__main__':
     model.to(device)
 
     # Load datasets
-    dataset = CelebA(
-        base_dir=options.dataset_dir,
-        usage='all',
+    dataset = datasets.ImageFolder('/home/akasaka/nas/dataset/LFWA/lfw-deepfunneled-MTCNN160',
         transform=transforms.Compose([
             transforms.Resize((img_size, img_size)),
             transforms.ToTensor(),
-            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+            # fixed_image_standardization
         ]),
-        sorted=True
     )
+
+    # dataset = LFW(
+    #     base_dir=options.dataset_dir,
+    #     transform=transforms.Compose([
+    #         transforms.Resize((img_size, img_size)),
+    #         transforms.ToTensor(),
+    #         fixed_image_standardization
+    #     ]),
+    # )
 
     random_dataloader = DataLoader(
         dataset,
@@ -153,8 +163,9 @@ if __name__ == '__main__':
     count = 0
     transform = transforms.ToPILImage()
     for i, (data, id) in enumerate(tqdm(dataset)):
-        # if i == 1000:
+        # if i == 100:
         #     break
+        # id = id[:id.rfind('_')]
         data = data.unsqueeze(0).to(device)
         if current_id is None or current_id != id:
             if same_datas.size(dim=0) != 0:
@@ -171,12 +182,11 @@ if __name__ == '__main__':
     done = False
     while not done:
         for batch_data, id in tqdm(random_dataloader):
-            sorted_id, _ = torch.sort(id)
-
+            set_id = set(id)
             if dif_cossims.size(dim=0) > same_cossims.size(dim=0):
                 done = True
                 break
-            if torch.equal(torch.unique(id), sorted_id):
+            if len(set_id) == len(id):
                 batch_data = batch_data.to(device)
                 dif_features = model(batch_data)
                 if dif_features.size(dim=0) == options.batch_size:
@@ -213,3 +223,6 @@ if __name__ == '__main__':
     plt.xlabel("FPR")
     plt.ylabel("TPR")
     plt.savefig(resolve_path(result_dir, f'{options.target_model}_{options.embedding_size}_ROC.png'))
+
+if __name__ == '__main__':
+    main()

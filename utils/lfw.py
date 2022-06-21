@@ -12,11 +12,7 @@ class LFW(torch.utils.data.Dataset):
     def __init__(
         self,
         base_dir: str,
-        # usage: str, # 'train' | 'validate' | 'test' | 'all'
-        # select: Optional[Tuple[int, int]] = (None, None), # A tuple of (num of identities, num per identity)
-        # exclude: Optional[set] = None, # A set of identities which is excluded
         transform: Optional[Callable] = None,
-        # sorted  = False
     ) -> None:
         self.base_dir = base_dir
         self.folder_paths= glob.glob(base_dir + '/*')
