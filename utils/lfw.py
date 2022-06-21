@@ -15,12 +15,12 @@ class LFW(torch.utils.data.Dataset):
         transform: Optional[Callable] = None,
     ) -> None:
         self.base_dir = base_dir
-        self.folder_paths= glob.glob(base_dir + '/*')
+        self.folder_paths= sorted(glob.glob(base_dir + '/*'))
         self.file_paths = []
         self.transform = transform
 
         for i, folder_path in enumerate(self.folder_paths):
-            for file_path in glob.glob(folder_path + '/*'):
+            for file_path in sorted(glob.glob(folder_path + '/*')):
                 self.file_paths.append(file_path[file_path.rfind('/')+1:])
             
     def __len__(self) -> int:
@@ -37,7 +37,9 @@ class LFW(torch.utils.data.Dataset):
         return data, label
 
 def main():
-    dataset = LFW(base_dir='../../dataset/LFWA/lfw-deepfunneled_MTCNN160')
+    dataset = LFW(base_dir='../../dataset/LFWA/lfw-deepfunneled-MTCNN160')
+    for _, j in dataset:
+        print(j)
 
 if __name__=='__main__':
     main()

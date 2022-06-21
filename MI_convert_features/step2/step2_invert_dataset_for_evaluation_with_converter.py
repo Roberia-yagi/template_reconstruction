@@ -18,6 +18,8 @@ from utils.lfw import LFW
 from utils.util import (resolve_path, save_json, create_logger, get_img_size,load_attacker_discriminator, load_attacker_generator, 
                         load_autoencoder, load_json, load_model_as_feature_extractor, RandomBatchLoader, get_img_size, get_freer_gpu)
 
+from easydict import EasyDict as edict
+
 def get_options() -> Any:
     parser = argparse.ArgumentParser()
 
@@ -30,8 +32,6 @@ def get_options() -> Any:
     parser.add_argument("--result_dir", type=str, default="../../../results/dataset_reconstructed", help="path to directory which includes results")
     parser.add_argument("--step1_dir", type=str, required=True, help="path to directory which includes the step1 result")
     parser.add_argument("--GAN_dir", type=str, default="../../../results/common/step2/pure_facenet_500epoch_features", help="path to directory which includes the step1 result")
-    parser.add_argument('--target_model_path', default='', type=str, help='path to pretrained target model')
-    parser.add_argument('--attack_model_path', default='', type=str, help='path to pretrained attack model')
 
     # For inference 
     parser.add_argument("--batch_size", type=int, default=64, help="size of the batches")
@@ -44,11 +44,6 @@ def get_options() -> Any:
     # Conditions
     parser.add_argument("--latent_dim", type=int, default=100, help="dimensionality of the latent space")
     parser.add_argument("--img_channels", type=int, default=3, help="number of image channels")
-    parser.add_argument("--target_model", type=str, default="Magface", help="target model: 'FaceNet', 'Arcface', 'Magface")
-    parser.add_argument("--attack_model", type=str, default="FaceNet", help="attack model: 'FaceNet', 'Arcface', 'Magface")
-    parser.add_argument("--AE_ver", type=int, default=1.1, help="AE version: 1, 1.1, 1.2, 1.3, 1.4")
-    parser.add_argument("--target_embedding_size", type=int, default=512, help="embedding size of features of target model:[128, 512]")
-    parser.add_argument("--attack_embedding_size", type=int, default=512, help="embedding size of features of target model:[128, 512]")
     parser.add_argument("--num_of_images", type=int, default=300, help="size of test dataset")
 
     opt = parser.parse_args()
@@ -90,9 +85,9 @@ def set_global():
     global device
     options = get_options()
 
-    # gpu_idx = get_freer_gpu()
-    # device = f"cuda:{gpu_idx}" if torch.cuda.is_available() else "cpu"
-    device = f"cuda:{options.gpu_idx}" if torch.cuda.is_available() else "cpu"
+    gpu_idx = get_freer_gpu()
+    device = f"cuda:{gpu_idx}" if torch.cuda.is_available() else "cpu"
+    # device = f"cuda:{options.gpu_idx}" if torch.cuda.is_available() else "cpu"
 
     options.device = device
 
@@ -111,14 +106,15 @@ def main():
     logger = create_logger(f"Step 2", resolve_path(result_dir, "inference.log"))
 
     step1_dir = options.step1_dir
+    step1_options = edict(load_json(resolve_path(options.step1_dir, "step1.json")))
     GAN_options = load_json(resolve_path(options.GAN_dir, "step2.json"))
 
     # Log options
     logger.info(vars(options))
 
     # Load models
-    img_size_T = get_img_size(options.target_model)
-    img_size_A = get_img_size(options.attack_model)
+    img_size_T = get_img_size(step1_options.target_model)
+    img_size_A = get_img_size(step1_options.attack_model)
     img_shape_T = (options.img_channels, img_size_T, img_size_T)
 
     D = load_attacker_discriminator(
@@ -136,24 +132,24 @@ def main():
         device=device
     ).to(device)
     T, _ = load_model_as_feature_extractor(
-        arch=options.target_model,
-        embedding_size=options.target_embedding_size,
+        arch=step1_options.target_model,
+        embedding_size=step1_options.target_embedding_size,
         mode='eval',
-        path=options.target_model_path,
+        path=step1_options.target_model_path,
         pretrained=True
     )
     A, _ = load_model_as_feature_extractor(
-        arch=options.attack_model,
-        embedding_size=options.attack_embedding_size,
+        arch=step1_options.attack_model,
+        embedding_size=step1_options.attack_embedding_size,
         mode='eval',
-        path=options.attack_model_path,
+        path=step1_options.attack_model_path,
         pretrained=True
     )
     C = load_autoencoder(
         model_path=resolve_path(step1_dir, 'AE.pth'),
         pretrained=True,
         mode='eval',
-        ver=options.AE_ver
+        ver=step1_options.AE_ver
     ).to(device)
 
     if isinstance(D, nn.Module):
