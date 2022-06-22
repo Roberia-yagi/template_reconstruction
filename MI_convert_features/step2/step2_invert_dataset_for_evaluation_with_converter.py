@@ -263,7 +263,7 @@ def main():
         target_images_path = resolve_path(reconstructed_result_dir, f"target_images.png")
         save_image(data, target_images_path, normalize=True)
 
-        print(f'{reconstruction_count}/{options.num_of_images} has been done')
+        logger.info(f'{reconstruction_count}/{options.num_of_images} has been done')
 
     elapsed_time = time.time() - start_time
     logger.debug(f"[Elapsed time of all epochs: {elapsed_time}]")
