@@ -196,7 +196,7 @@ def main():
             used_identity.add(identity_name)
             reconstruction_count += 1
 
-        if options.resume > i:
+        if options.resume > reconstruction_count:
             continue
             
         reconstructed_result_dir = resolve_path(result_dir, folder_name)
