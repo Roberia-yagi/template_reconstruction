@@ -121,7 +121,7 @@ def load_model_as_feature_extractor(arch: str, embedding_size: int, mode: str, p
     if arch == "Arcface":
         if embedding_size == 512:
             model = Backbone(num_layers=50, drop_ratio=0.6, mode='ir_se')
-            path = '../../models/arcface_ir_se50.pth'
+            path = '../../../models/arcface_ir_se50.pth'
         elif embedding_size == 128:
             # Finetuned
             model = Backbone(num_layers=50, drop_ratio=0.6, mode='ir_se')

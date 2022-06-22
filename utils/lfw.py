@@ -13,11 +13,13 @@ class LFW(torch.utils.data.Dataset):
         self,
         base_dir: str,
         transform: Optional[Callable] = None,
+        opencv: bool = False
     ) -> None:
         self.base_dir = base_dir
         self.folder_paths= sorted(glob.glob(base_dir + '/*'))
         self.file_paths = []
         self.transform = transform
+        self.opencv = opencv
 
         for i, folder_path in enumerate(self.folder_paths):
             for file_path in sorted(glob.glob(folder_path + '/*')):
@@ -33,6 +35,8 @@ class LFW(torch.utils.data.Dataset):
 
         if self.transform is not None:
             data = self.transform(data)
+            if self.opencv:
+                data[0], data[2] = data.clone()[2], data.clone()[0]
 
         return data, label
 

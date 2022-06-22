@@ -40,6 +40,7 @@ def get_options() -> Any:
     parser.add_argument("--learning_rate", type=float, default=0.035, help="learning rate")
     parser.add_argument("--momentum", type=float, default=0.9, help="learning rate")
     parser.add_argument("--lambda_i", type=float, default=100, help="learning rate")
+    parser.add_argument("--resume", int=-1, help="image of resume")
 
     # Conditions
     parser.add_argument("--latent_dim", type=int, default=100, help="dimensionality of the latent space")
@@ -194,6 +195,9 @@ def main():
         else:
             used_identity.add(identity_name)
             reconstruction_count += 1
+
+        if options.resume > i:
+            continue
             
         reconstructed_result_dir = resolve_path(result_dir, folder_name)
         os.makedirs(reconstructed_result_dir, exist_ok=False)

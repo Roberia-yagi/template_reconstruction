@@ -94,9 +94,9 @@ def set_global():
     options.device = device
 
 
-def fixed_image_standardization(image_tensor):
-    processed_tensor = (image_tensor - 127.5) / 128.0
-    return processed_tensor
+# def fixed_image_standardization(image_tensor):
+#     processed_tensor = (image_tensor - 127.5) / 128.0
+#     return processed_tensor
 
 
 def main():
@@ -128,22 +128,28 @@ def main():
     model.to(device)
 
     # Load datasets
-    dataset = datasets.ImageFolder('/home/akasaka/nas/dataset/LFWA/lfw-deepfunneled-MTCNN160',
+    # dataset = datasets.ImageFolder('/home/akasaka/nas/dataset/LFWA/lfw-deepfunneled-MTCNN160',
+    #     transform=transforms.Compose([
+    #         transforms.Resize((img_size, img_size)),
+    #         transforms.ToTensor(),
+    #         # fixed_image_standardization
+    #     ]),
+    # )
+
+    if options.target_model == 'Magface':
+        opencv = True
+    else:
+        opencv = False
+
+    dataset = LFW(
+        base_dir=options.dataset_dir,
         transform=transforms.Compose([
             transforms.Resize((img_size, img_size)),
             transforms.ToTensor(),
             # fixed_image_standardization
         ]),
+        opencv=opencv
     )
-
-    # dataset = LFW(
-    #     base_dir=options.dataset_dir,
-    #     transform=transforms.Compose([
-    #         transforms.Resize((img_size, img_size)),
-    #         transforms.ToTensor(),
-    #         fixed_image_standardization
-    #     ]),
-    # )
 
     random_dataloader = DataLoader(
         dataset,
@@ -165,7 +171,7 @@ def main():
     for i, (data, id) in enumerate(tqdm(dataset)):
         # if i == 100:
         #     break
-        # id = id[:id.rfind('_')]
+        id = id[:id.rfind('_')]
         data = data.unsqueeze(0).to(device)
         if current_id is None or current_id != id:
             if same_datas.size(dim=0) != 0:
@@ -217,7 +223,8 @@ def main():
     y = np.r_[np.ones(same_cossims.numpy().shape), np.zeros(dif_cossims.numpy().shape)]
     fpr, tpr, thresholds = roc_curve(y, x)
 
-    threshold_idx = np.argmin(fpr - tpr)
+    # threshold_idx = np.argmin(fpr - tpr)
+    threshold_idx = np.argmin(fpr - 0.01)
     logger.info(f"[Threshold: {thresholds[threshold_idx]}] [FPR: {fpr[threshold_idx]}] [TPR: {tpr[threshold_idx]}]")
     plt.plot(fpr, tpr)
     plt.xlabel("FPR")
