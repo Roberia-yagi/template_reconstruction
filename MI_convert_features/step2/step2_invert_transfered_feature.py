@@ -108,13 +108,15 @@ def main():
     for i in range(1, options.times + 1):
         result_each_time_dir = resolve_path(result_dir, f"{i}")
         os.makedirs(result_each_time_dir, exist_ok=True)
-    
-    # Save options by json format
-    save_json(resolve_path(result_dir, "step2.json"), vars(options))
 
     # Load step1 options
     step1_dir = options.step1_dir
+    step1_options = load_json(resolve_path(options.step1_dir, "step1.json"))
     GAN_options = load_json(resolve_path(options.GAN_dir, "step2.json"))
+    
+    # Save options by json format
+    save_json(resolve_path(result_dir, "step1.json"), step1_options)
+    save_json(resolve_path(result_dir, "step2.json"), vars(options))
 
     # Create logger
     logger = create_logger(f"Step 2", resolve_path(result_dir, "inference.log"))

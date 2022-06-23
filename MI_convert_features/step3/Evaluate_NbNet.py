@@ -54,7 +54,7 @@ def calculate_inception_score(data_dir):
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
     ])
     dataset = datasets.ImageFolder(data_dir, transform=transform)
-    return inception_score(IgnoreLabelDataset(dataset), cuda=True, batch_size=32, resize=True, splits=10)
+    return inception_score(IgnoreLabelDataset(dataset), device=device, batch_size=32, resize=True, splits=10)
 
 def get_options() -> Any:
     parser = argparse.ArgumentParser()

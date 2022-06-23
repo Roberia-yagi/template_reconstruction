@@ -54,7 +54,7 @@ def calculate_inception_score(data_dir):
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
     ])
     dataset = datasets.ImageFolder(data_dir, transform=transform)
-    return inception_score(IgnoreLabelDataset(dataset), cuda=True, batch_size=32, resize=True, splits=10)
+    return inception_score(IgnoreLabelDataset(dataset), device=device, batch_size=32, resize=True, splits=10)
 
 def get_options() -> Any:
     parser = argparse.ArgumentParser()
@@ -82,6 +82,7 @@ def set_global():
 
     gpu_idx = get_freer_gpu()
     device = f"cuda:{gpu_idx}" if torch.cuda.is_available() else "cpu"
+    print(device)
 
     options.device = device
 
@@ -93,7 +94,12 @@ def main():
     result_dir = resolve_path(options.result_dir, (options.identifier + '_' + step2_dir))
     os.makedirs(result_dir, exist_ok=True)
 
+    step1_options = load_json(resolve_path(options.step2_dir, "step1.json"))
+    step2_options = load_json(resolve_path(options.step2_dir, "step2.json"))
+    
     # Save options by json format
+    save_json(resolve_path(result_dir, "step1.json"), step1_options)
+    save_json(resolve_path(result_dir, "step2.json"), step2_options)
     save_json(resolve_path(result_dir, "step3.json"), vars(options))
 
     # Create logger
@@ -106,10 +112,10 @@ def main():
     logger.info(vars(options))
 
     # Load models
-    img_size_T = get_img_size(step2_options['target_model'])
+    img_size_T = get_img_size(step1_options['target_model'])
 
     T, _ = load_model_as_feature_extractor(
-        arch=step2_options['target_model'],
+        arch=step1_options['target_model'],
         embedding_size=options.embedding_size,
         mode='eval',
         path=options.target_model_path,
@@ -168,7 +174,7 @@ def main():
     plt.ylabel("Freq")
     plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.1))
     plt.ylim(0, max__)
-    plt.savefig(resolve_path(result_dir, f'{step2_options["target_model"]}_{options.embedding_size}_hist.png'), bbox_inches='tight')
+    plt.savefig(resolve_path(result_dir, f'{step1_options["target_model"]}_{options.embedding_size}_hist.png'), bbox_inches='tight')
     plt.clf()
 
     # Calculate fpr, tpr, threshold

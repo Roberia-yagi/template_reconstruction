@@ -326,8 +326,12 @@ def get_freer_gpu():
     for i in range(torch.cuda.device_count()):
         memory_available_before = get_memory_usage()
         device = f'cuda:{i}'
-        tmp = torch.tensor([1]).to(device)
+        tmp = torch.tensor([1000]).to(device)
         memory_available_after = get_memory_usage()
+        # print(memory_available_before)
+        # print(memory_available_after)
+        if max(memory_available_before - memory_available_after) == 0:
+            continue
         gpu_idx = np.argmax(memory_available_before - memory_available_after)
         del tmp
         torch.cuda.empty_cache()
