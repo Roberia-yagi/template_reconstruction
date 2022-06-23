@@ -188,7 +188,6 @@ def main():
     )
     used_identity = set()
     reconstruction_count = 0
-    metric = nn.CosineSimilarity(dim=1)
 
     for i, (data, label) in enumerate(dataset):
         if reconstruction_count >= options.num_of_images:
@@ -261,10 +260,10 @@ def main():
         for _, batch in enumerate(result_dataloader):
             images = G(batch)
 
-            for image in images:
-                cossim = metric(A(image), target_feature)
-                best_images_path = resolve_path(reconstructed_result_dir, f"best_images_{cossim}.png")
-                save_image(image, best_images_path, normalize=True, nrow=iteration)
+            best_image, best_cossim = get_best_image(A, images, img_size_A, target_feature)
+
+            best_images_path = resolve_path(reconstructed_result_dir, f"best_images_{best_cossim}.png")
+            save_image(best_image, best_images_path, normalize=True, nrow=iteration)
 
         logger.info(f"[Saved all best images: {reconstructed_result_dir}]")
 
