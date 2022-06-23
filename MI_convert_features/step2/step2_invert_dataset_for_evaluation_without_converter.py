@@ -25,6 +25,7 @@ def get_options() -> Any:
     time_stamp = datetime.datetime.now().strftime("%Y_%m_%d_%H_%M")
     parser.add_argument("--identifier", type=str, default=time_stamp, help="timestamp")
     parser.add_argument("--gpu_idx", type=int, default=0, help="index of cuda devices")
+    parser.add_argument("--multi_gpu", action='store_true', help="flag of multi gpu")
     
     # Dir
     parser.add_argument("--result_dir", type=str, default="../../..//results/dataset_reconstructed", help="path to directory which includes results")
@@ -34,7 +35,6 @@ def get_options() -> Any:
     # For inference 
     parser.add_argument("--batch_size", type=int, default=64, help="size of the batches")
     parser.add_argument("--epochs", type=int, default=100, help="times to initialize z") 
-    parser.add_argument("--iterations", type=int, default=8, help="iterations to optimize z")
     parser.add_argument("--learning_rate", type=float, default=0.035, help="learning rate")
     parser.add_argument("--momentum", type=float, default=0.9, help="learning rate")
     parser.add_argument("--lambda_i", type=float, default=100, help="learning rate")
@@ -145,6 +145,11 @@ def main():
         A.to(device) 
         A.eval()
 
+    if options.multi_gpu:
+        D = nn.DataParallel(D)
+        G = nn.DataParallel(G)
+        A = nn.DataParallel(A)
+
     transform_A=transforms.Compose([
         transforms.Resize((img_size_A, img_size_A)),
     ])
@@ -176,7 +181,8 @@ def main():
         os.makedirs(reconstructed_result_dir, exist_ok=False)
 
         # Search z 
-        z = torch.randn(options.batch_size * options.iterations, options.latent_dim, requires_grad=True, device=device) 
+        iteration = int(256 / options.batch_size)
+        z = torch.randn(options.batch_size * iteration, options.latent_dim, requires_grad=True, device=device) 
         optimizer = optim.Adam([z], lr=options.learning_rate, betas=(0.9, 0.999), weight_decay=0)
         dataloader = RandomBatchLoader(z, options.batch_size)
 
@@ -228,7 +234,7 @@ def main():
             best_image, best_cossim = get_best_image(A, images, img_size_A, target_feature)
 
             best_images_path = resolve_path(reconstructed_result_dir, f"best_images_{best_cossim}.png")
-            save_image(best_image, best_images_path, normalize=True, nrow=options.iterations)
+            save_image(best_image, best_images_path, normalize=True, nrow=iteration)
 
         logger.info(f"[Saved all best images: {reconstructed_result_dir}]")
 
