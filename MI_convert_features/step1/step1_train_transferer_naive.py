@@ -53,7 +53,7 @@ def get_options() -> Any:
     parser.add_argument('--AE_path', type=str, help='path to pretrained AE')
 
     # Conditions of optimizer
-    parser.add_argument("--learning_rate", type=float, default=0.001, help="learning rate of optimizer")
+    parser.add_argument("--learning_rate", "--lr", type=float, default=0.001, help="learning rate of optimizer")
     parser.add_argument("--beta1", type=float, default=0.9, help="hyper-parameter of Adam")
     parser.add_argument("--beta2", type=float, default=0.999, help="hyper-parameter of Adam")
     parser.add_argument("--weight_decay", type=float, default=0, help="hyper-parameter of Adam")
@@ -71,6 +71,7 @@ def get_options() -> Any:
     parser.add_argument("--n_epochs", type=int, default=int(1e9), help="number of epochs of training")
     parser.add_argument("--resume", action='store_true', help='flag of resume')
     parser.add_argument("--resume_epoch", type=int, help='flag of resume')
+    parser.add_argument("--gamma", type=float, default=1, help='weight of negative loss')
     parser.add_argument("--num_of_identities", type=int, default=7000, help="Number of unique identities")
     parser.add_argument("--num_per_identity", type=int, default=20, help="Number of unique identities")
     parser.add_argument("--early_stop", type=int, default=5, help="the trial limitation of non-update training")
@@ -144,7 +145,7 @@ def train_target(
         if i == 0:
             cprint(converted_target_features_in_A, 'green')
             cprint(target_features_A, 'red')
-        loss = (loss_same + loss_diff) / 2
+        loss = (loss_same + options.gamma * loss_diff) / 2
         loss_history = np.append(loss_history, torch.clone(loss).detach().cpu().numpy())
         loss_same_history = np.append(loss_same_history, torch.clone(loss_same).detach().cpu().numpy())
         loss_diff_history = np.append(loss_diff_history, torch.clone(loss_diff).detach().cpu().numpy())

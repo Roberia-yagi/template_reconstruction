@@ -1,6 +1,6 @@
 import sys
 sys.path.append('../')
-from utils.pytorch_GAN_zoo.hubconf import DCGAN
+from utils.pytorch_GAN_zoo.hubconf import PGAN
 
-model = DCGAN(pretrained=True)
+model = PGAN(pretrained=True, model_name='celebAHQ-256')
 print(model.getNetD())

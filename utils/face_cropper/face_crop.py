@@ -14,6 +14,9 @@ from util import resolve_path
 import argparse
 from typing import Any
 
+from PIL import ImageFile
+ImageFile.LOAD_TRUNCATED_IMAGES = True
+
 def get_options() -> Any:
     parser = argparse.ArgumentParser()
 
@@ -37,13 +40,14 @@ def main():
     # Create MTCNN
     mtcnn = MTCNN()
 
-    foldernames = glob(dataset_in_dir + '/*')
+    foldernames = glob(dataset_in_dir + '/img')
 
     # change the range to variable
     for foldername in tqdm(foldernames):
         out_folder_path = resolve_path(dataset_out_dir, foldername[foldername.rfind('/', 2)+1:])
         os.makedirs(out_folder_path, exist_ok=True)
         for filename in glob(foldername + '/*'):
+            print(filename)
             out_path = resolve_path(out_folder_path, filename[filename.rfind('/')+1:])
 
             img = Image.open(filename)
