@@ -15,6 +15,7 @@ from torchvision.utils import save_image
 from torch import optim
 
 from utils.lfw import LFW
+from utils.ijb import IJB
 from utils.util import (resolve_path, save_json, create_logger, get_img_size,load_attacker_discriminator, load_attacker_generator, 
                         load_autoencoder, load_json, load_model_as_feature_extractor, RandomBatchLoader, get_img_size, get_freer_gpu)
 
@@ -180,8 +181,14 @@ def main():
         transforms.Resize((img_size_T, img_size_T)),
     ])
 
-    dataset = LFW(
-        base_dir='../../../dataset/LFWA/lfw-deepfunneled-MTCNN160',
+    # dataset = LFW(
+    #     base_dir='../../../dataset/LFWA/lfw-deepfunneled-MTCNN160',
+    #     transform=transforms.Compose([
+    #         transforms.ToTensor(),
+    #     ]),
+    # )
+    dataset = IJB(
+        base_dir='../../../dataset/IJB-C_MTCNN160/organized_images/img',
         transform=transforms.Compose([
             transforms.ToTensor(),
         ]),
