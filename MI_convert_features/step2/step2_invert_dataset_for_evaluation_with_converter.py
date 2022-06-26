@@ -274,7 +274,8 @@ def main():
         result_dataloader = RandomBatchLoader(z, options.batch_size)
 
         # Calc 
-        for _, batch in enumerate(result_dataloader):
+        for _, batch in enumerate(z):
+            batch = batch.unsqueeze(0)
             images = G(batch).detach()
 
             best_image, best_cossim = get_best_image(A, images, img_size_A, target_feature)
