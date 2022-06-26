@@ -1,4 +1,5 @@
 import sys
+import time
 
 sys.path.append('../')
 sys.path.append('../../')
@@ -31,6 +32,7 @@ def get_options() -> Any:
     parser.add_argument("--multi_gpu", action='store_true', help="flag of multi gpu")
     
     # Dir
+    parser.add_argument("--dataset_dir", type=str, default='/home/akasaka/projects/akasaka/dataset/IJB-C_MTCNN160/organized_images/img')
     parser.add_argument("--result_dir", type=str, default="../../../results/dataset_reconstructed", help="path to directory which includes results")
     parser.add_argument("--step1_dir", type=str, required=True, help="path to directory which includes the step1 result")
     parser.add_argument("--GAN_dir", type=str, default="../../../results/common/step2/pure_facenet_500epoch_features", help="path to directory which includes the step1 result")
@@ -188,7 +190,7 @@ def main():
     #     ]),
     # )
     dataset = IJB(
-        base_dir='../../../dataset/IJB-C_MTCNN160/organized_images/img',
+        base_dir=options.dataset_dir,
         transform=transforms.Compose([
             transforms.ToTensor(),
         ]),
@@ -200,7 +202,7 @@ def main():
         if reconstruction_count >= options.num_of_images:
             break
         data = data.to(device)
-        target_feature = C(T(transform_T(data).unsqueeze(0)))
+        target_feature = C(T(transform_T(data).unsqueeze(0))).detach()
 
         folder_name = label[:label.rfind('.')]
         identity_name = folder_name[:label.rfind('_')]
@@ -259,13 +261,21 @@ def main():
                 loss_update_counter += 1
 
         logger.info(f"{label} image has been reconstructed in {epoch} epochs")
-            
+
+        del L_prior_loss
+        del L_id_loss
+        del total_loss
+        del L_prior_loss_avg
+        del L_id_loss_avg
+        del total_loss_avg
+        torch.cuda.empty_cache()
+
         # Save results
         result_dataloader = RandomBatchLoader(z, options.batch_size)
 
         # Calc 
         for _, batch in enumerate(result_dataloader):
-            images = G(batch)
+            images = G(batch).detach()
 
             best_image, best_cossim = get_best_image(A, images, img_size_A, target_feature)
 
