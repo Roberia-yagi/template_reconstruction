@@ -21,6 +21,7 @@ from torch.utils.data import DataLoader
 from sklearn.metrics import roc_curve
 from utils.celeba import CelebA
 from utils.lfw import LFW
+from utils.ijb import IJB
 from torch import nn
 import matplotlib.pyplot as plt
 
@@ -141,7 +142,17 @@ def main():
     else:
         opencv = False
 
-    dataset = LFW(
+    # dataset = LFW(
+    #     base_dir=options.dataset_dir,
+    #     transform=transforms.Compose([
+    #         transforms.Resize((img_size, img_size)),
+    #         transforms.ToTensor(),
+    #         # fixed_image_standardization
+    #     ]),
+    #     opencv=opencv
+    # )
+
+    dataset = IJB(
         base_dir=options.dataset_dir,
         transform=transforms.Compose([
             transforms.Resize((img_size, img_size)),
@@ -150,6 +161,7 @@ def main():
         ]),
         opencv=opencv
     )
+
 
     random_dataloader = DataLoader(
         dataset,
