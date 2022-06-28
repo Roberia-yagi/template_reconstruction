@@ -41,7 +41,6 @@ def get_options() -> Any:
     parser.add_argument("--batch_size", type=int, default=64, help="size of the batches")
     parser.add_argument("--epochs", type=int, default=100, help="times to initialize z") 
     parser.add_argument("--learning_rate", type=float, default=0.035, help="learning rate")
-    parser.add_argument("--momentum", type=float, default=0.9, help="learning rate")
     parser.add_argument("--lambda_i", type=float, default=100, help="learning rate")
     parser.add_argument("--resume", type=int, default=-1, help="image of resume")
 

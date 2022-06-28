@@ -74,7 +74,7 @@ def get_options() -> Any:
     parser.add_argument("--gamma", type=float, default=1, help='weight of negative loss')
     parser.add_argument("--num_of_identities", type=int, default=7000, help="Number of unique identities")
     parser.add_argument("--num_per_identity", type=int, default=20, help="Number of unique identities")
-    parser.add_argument("--early_stop", type=int, default=5, help="the trial limitation of non-update training")
+    parser.add_argument("--early_stop", type=int, default=1, help="the trial limitation of non-update training")
     parser.add_argument("--negative_loss", action='store_true', help='flag of negative loss')
     parser.add_argument("--num_of_samples", type=int, default=10, help="Number of samples for calculation of negative loss")
 
