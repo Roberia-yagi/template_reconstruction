@@ -18,11 +18,13 @@ class LFW(torch.utils.data.Dataset):
         self.base_dir = base_dir
         self.folder_paths= sorted(glob.glob(base_dir + '/*'))
         self.file_paths = []
+        self.labels = []
         self.transform = transform
         self.opencv = opencv
 
         for i, folder_path in enumerate(self.folder_paths):
             for file_path in sorted(glob.glob(folder_path + '/*')):
+                self.labels.append(folder_path[folder_path.rfind('/')+1:])
                 self.file_paths.append(file_path[file_path.rfind('/')+1:])
             
     def __len__(self) -> int:
@@ -31,14 +33,15 @@ class LFW(torch.utils.data.Dataset):
     def __getitem__(self, index: int) -> Tuple[Any, Any]:
         data = PIL.Image.open(resolve_path(self.base_dir,
             self.file_paths[index][:self.file_paths[index].rfind('_')], self.file_paths[index]))
-        label = self.file_paths[index]
+        label = self.labels[index]
+        filename = self.file_paths[index]
 
         if self.transform is not None:
             data = self.transform(data)
             if self.opencv:
                 data[0], data[2] = data.clone()[2], data.clone()[0]
 
-        return data, label
+        return data, (label, filename)
 
 def main():
     dataset = LFW(base_dir='../../dataset/LFWA/lfw-deepfunneled-MTCNN160')

@@ -12,6 +12,7 @@ from typing import Any, Tuple
 import torch
 from torch import nn
 from torchvision import transforms
+from torch.utils.data import DataLoader
 from torchvision.utils import save_image
 from torch import optim
 
@@ -32,7 +33,7 @@ def get_options() -> Any:
     parser.add_argument("--multi_gpu", action='store_true', help="flag of multi gpu")
     
     # Dir
-    parser.add_argument("--dataset_dir", type=str, default='/home/akasaka/projects/akasaka/dataset/IJB-C_MTCNN160/organized_images/img')
+    parser.add_argument("--dataset", type=str, default='IJB-C', help='test dataset:["LFWA, IJB-C"]')
     parser.add_argument("--result_dir", type=str, default="../../../results/dataset_reconstructed", help="path to directory which includes results")
     parser.add_argument("--step1_dir", type=str, required=True, help="path to directory which includes the step1 result")
     parser.add_argument("--GAN_dir", type=str, default="../../../results/common/step2/pure_facenet_500epoch_features", help="path to directory which includes the step1 result")
@@ -48,6 +49,7 @@ def get_options() -> Any:
     parser.add_argument("--latent_dim", type=int, default=100, help="dimensionality of the latent space")
     parser.add_argument("--img_channels", type=int, default=3, help="number of image channels")
     parser.add_argument("--num_of_images", type=int, default=300, help="size of test dataset")
+    parser.add_argument("--seed", type=int, default=0, help="seed for pytorch dataloader shuffle")
 
     opt = parser.parse_args()
 
@@ -182,33 +184,43 @@ def main():
         transforms.Resize((img_size_T, img_size_T)),
     ])
 
-    # dataset = LFW(
-    #     base_dir='../../../dataset/LFWA/lfw-deepfunneled-MTCNN160',
-    #     transform=transforms.Compose([
-    #         transforms.ToTensor(),
-    #     ]),
-    # )
-    dataset = IJB(
-        base_dir=options.dataset_dir,
-        transform=transforms.Compose([
-            transforms.ToTensor(),
-        ]),
-    )
+    if options.dataset == 'LFW':
+        dataset = LFW( base_dir='../../../dataset/LFWA/lfw-deepfunneled-MTCNN160',
+            transform=transforms.Compose([
+                transforms.ToTensor(),
+            ]),
+        )
+    elif options.dataset == 'IJB-C':
+        dataset = IJB(
+            base_dir='../../../dataset/IJB-C_cropped/img',
+            transform=transforms.Compose([
+                transforms.ToTensor(),
+            ]),
+        )
     used_identity = set()
     reconstruction_count = 0
 
-    for i, (data, label) in enumerate(dataset):
+    torch.seed(options.seed)
+    dataloader = DataLoader(
+        dataset,
+        batch_size=1,
+        shuffle=True,
+        # Optimization:
+        num_workers=os.cpu_count(),
+        pin_memory=True
+    )
+
+    for i, (data, (label, filename)) in enumerate(dataset):
         if reconstruction_count >= options.num_of_images:
             break
         data = data.to(device)
         target_feature = C(T(transform_T(data).unsqueeze(0))).detach()
 
-        folder_name = label[:label.rfind('.')]
-        identity_name = folder_name[:label.rfind('_')]
-        if identity_name in used_identity:
+        folder_name = filename[:filename.rfind('.')]
+        if label in used_identity:
             continue
         else:
-            used_identity.add(identity_name)
+            used_identity.add(label)
             reconstruction_count += 1
 
         if options.resume > reconstruction_count:

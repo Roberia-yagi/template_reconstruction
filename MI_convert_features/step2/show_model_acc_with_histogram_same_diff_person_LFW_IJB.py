@@ -37,9 +37,9 @@ def get_options() -> Any:
     # Directories
     time_stamp = datetime.datetime.now().strftime("%Y_%m_%d_%H_%M")
     parser.add_argument("--identifier", type=str, default=time_stamp, help="timestamp")
-    parser.add_argument("--result_dir", type=str, default="~/nas/results/show_model_acc_with_hist_LFW",
+    parser.add_argument("--result_dir", type=str, default="../../../results/show_model_acc_with_hist_LFW",
                         help="path to directory which includes results")
-    parser.add_argument("--dataset_dir", type=str, default="/home/akasaka/nas/dataset/LFWA/lfw-deepfunneled-MTCNN160", help="path to directory which includes dataset(Fairface)")
+    parser.add_argument("--dataset", type=str, default="LFW", help="test dataset:[LFW, IJB-C]")
 
 
     # System preferences
@@ -128,39 +128,34 @@ def main():
     )
     model.to(device)
 
-    # Load datasets
-    # dataset = datasets.ImageFolder('/home/akasaka/nas/dataset/LFWA/lfw-deepfunneled-MTCNN160',
-    #     transform=transforms.Compose([
-    #         transforms.Resize((img_size, img_size)),
-    #         transforms.ToTensor(),
-    #         # fixed_image_standardization
-    #     ]),
-    # )
 
     if options.target_model == 'Magface':
         opencv = True
     else:
         opencv = False
 
-    # dataset = LFW(
-    #     base_dir=options.dataset_dir,
-    #     transform=transforms.Compose([
-    #         transforms.Resize((img_size, img_size)),
-    #         transforms.ToTensor(),
-    #         # fixed_image_standardization
-    #     ]),
-    #     opencv=opencv
-    # )
-
-    dataset = IJB(
-        base_dir=options.dataset_dir,
-        transform=transforms.Compose([
-            transforms.Resize((img_size, img_size)),
-            transforms.ToTensor(),
-            # fixed_image_standardization
-        ]),
-        opencv=opencv
-    )
+    # Load datasets
+    if options.dataset == 'LFW':
+        dataset = LFW(
+            base_dir='../../../dataset/LFWA/lfw-deepfunneled-MTCNN160',
+            transform=transforms.Compose([
+                transforms.Resize((img_size, img_size)),
+                transforms.ToTensor(),
+                # fixed_image_standardization
+            ]),
+            opencv=opencv
+        )
+    elif options.dataset == 'IJB-C':
+        dataset = IJB(
+            base_dir='../../../dataset/IJB-C/cropped/img',
+            transform=transforms.Compose([
+                transforms.Resize((img_size, img_size)),
+                transforms.ToTensor(),
+            ]),
+            opencv=opencv
+        )
+    else:
+        raise('dataset is invalid')
 
 
     random_dataloader = DataLoader(
@@ -180,13 +175,11 @@ def main():
     same_cossims = torch.Tensor()
     count = 0
     transform = transforms.ToPILImage()
-    for i, (data, id) in enumerate(tqdm(dataset)):
-        # if i == 100:
-        #     break
-        id = id[:id.rfind('_')]
+    for i, (data, (id, _)) in enumerate(tqdm(dataset)):
         data = data.unsqueeze(0).to(device)
         if current_id is None or current_id != id:
             if same_datas.size(dim=0) != 0:
+                # print(same_datas.shape)
                 same_features = model(same_datas)
                 cossims = calculate_cossim_of_all_combinations(same_features, criterion)
                 same_cossims = torch.concat((same_cossims, cossims))
@@ -194,12 +187,14 @@ def main():
             current_id = id
         elif current_id == id:
             same_datas= torch.concat((same_datas, data))
+
+    print(same_cossims.size())
         
     # Sample datas of different person rondamly and calculate
     dif_cossims = torch.Tensor()
     done = False
     while not done:
-        for batch_data, id in tqdm(random_dataloader):
+        for batch_data, (id, _) in tqdm(random_dataloader):
             set_id = set(id)
             if dif_cossims.size(dim=0) > same_cossims.size(dim=0):
                 done = True
@@ -225,9 +220,9 @@ def main():
     plt.clf()
 
     # save data as pickle
-    with open(resolve_path(result_dir, f'{options.target_model}_same_cossim.pkl'), 'wb') as f:
+    with open(resolve_path(result_dir, f'{options.target_model}_{options.dataset}_same_cossim.pkl'), 'wb') as f:
         pickle.dump(same_cossims.numpy(), f)
-    with open(resolve_path(result_dir, f'{options.target_model}_diff_cossim.pkl'), 'wb') as f:
+    with open(resolve_path(result_dir, f'{options.target_model}_{options.dataset}_diff_cossim.pkl'), 'wb') as f:
         pickle.dump(dif_cossims.numpy(), f)
 
     # Calculate scores and draw ROC curve
@@ -236,7 +231,7 @@ def main():
     fpr, tpr, thresholds = roc_curve(y, x)
 
     # threshold_idx = np.argmin(fpr - tpr)
-    threshold_idx = np.argmin(fpr - 0.01)
+    threshold_idx = np.argmin(fpr - tpr)
     logger.info(f"[Threshold: {thresholds[threshold_idx]}] [FPR: {fpr[threshold_idx]}] [TPR: {tpr[threshold_idx]}]")
     plt.plot(fpr, tpr)
     plt.xlabel("FPR")
