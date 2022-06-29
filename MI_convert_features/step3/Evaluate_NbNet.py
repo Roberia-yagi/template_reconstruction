@@ -129,7 +129,7 @@ def main():
     criterion = torch.nn.CosineSimilarity(dim=2)
 
     # calculate Inception score
-    inception_score = calculate_inception_score(resolve_path(options.NbNet_dir, 'best_images'))
+    inception_score = calculate_inception_score(options.NbNet_dir)
     logger.info(f'inception score is {inception_score}')
 
     # Compare reconstructed image with original image
