@@ -140,8 +140,8 @@ def main():
         if folder_name == 'best_images':
             continue
         for file_path in glob.glob(folder_path + '/*'):
-            target_file_path = resolve_path(options.dataset_dir, file_name)
             file_name = file_path[file_path[:-1].rfind('/')+1:-1]
+            target_file_path = resolve_path(options.dataset_dir, file_name)
             reconstructed_feature = extract_feature(file_path, T, transform_T)
             target_feature = extract_feature(target_file_path, T, transform_T)
             cossims = np.append(cossims, criterion(target_feature.cpu(), reconstructed_feature.cpu()))
