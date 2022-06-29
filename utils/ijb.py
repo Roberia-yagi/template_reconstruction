@@ -53,9 +53,9 @@ class IJB(torch.utils.data.Dataset):
         return data, (label, filename)
 
 def main():
-    dataset = IJB(base_dir='../../dataset/IJB-C/cropped/img', transform=torchvision.transforms.ToTensor())
-    for _, _ in dataset:
-        a = 1
+    dataset = IJB(base_dir='../../dataset/IJB-C_cropped/screened/img', transform=torchvision.transforms.ToTensor())
+    for _, (id, _ )in dataset:
+        print(id)
 
 if __name__=='__main__':
     main()

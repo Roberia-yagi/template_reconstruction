@@ -192,7 +192,7 @@ def main():
         )
     elif options.dataset == 'IJB-C':
         dataset = IJB(
-            base_dir='../../../dataset/IJB-C_cropped/img',
+            base_dir='../../../dataset/IJB-C_cropped/screened/img',
             transform=transforms.Compose([
                 transforms.ToTensor(),
             ]),
@@ -200,7 +200,7 @@ def main():
     used_identity = set()
     reconstruction_count = 0
 
-    torch.manual_seed(options.seed)
+    torch.seed(options.seed)
     dataloader = DataLoader(
         dataset,
         batch_size=1,

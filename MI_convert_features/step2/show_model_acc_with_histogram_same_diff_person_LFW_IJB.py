@@ -147,7 +147,7 @@ def main():
         )
     elif options.dataset == 'IJB-C':
         dataset = IJB(
-            base_dir='../../../dataset/IJB-C/cropped/img',
+            base_dir='../../../dataset/IJB-C_cropped/screened/img',
             transform=transforms.Compose([
                 transforms.Resize((img_size, img_size)),
                 transforms.ToTensor(),
@@ -156,7 +156,6 @@ def main():
         )
     else:
         raise('dataset is invalid')
-
 
     random_dataloader = DataLoader(
         dataset,
