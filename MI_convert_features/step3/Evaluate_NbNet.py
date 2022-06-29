@@ -23,8 +23,7 @@ from torchvision.utils import save_image
 from sklearn.metrics import roc_curve
 
 from utils.util import (resolve_path, save_json, create_logger, get_img_size, load_json, 
-                        load_model_as_feature_extractor, get_img_size, get_freer_gpu,
-                        extract_target_features)
+                        load_model_as_feature_extractor, get_img_size, get_freer_gpu)
 from utils.inception_score_pytorch.inception_score import inception_score
 
 class IgnoreLabelDataset(torch.utils.data.Dataset):
@@ -55,6 +54,10 @@ def calculate_inception_score(data_dir):
     ])
     dataset = datasets.ImageFolder(data_dir, transform=transform)
     return inception_score(IgnoreLabelDataset(dataset), device=device, batch_size=32, resize=True, splits=10)
+
+def extract_feature(image_dir, model, transform):
+    image = PIL.Image.open(image_dir)
+    feature = model(transform(image).to(device).unsqueeze(0)).unsqueeze(0)
 
 def get_options() -> Any:
     parser = argparse.ArgumentParser()
@@ -132,15 +135,16 @@ def main():
     # Compare reconstructed image with original image
     cossims = np.array([])
     max__ = 0
-    for folder_path in tqdm(glob.glob(options.NbNet_dir + '/*/')):
+    for folder_path in tqdm(glob.glob(options.NbNet_dir + '/*')):
         folder_name = folder_path[folder_path[:-1].rfind('/')+1:-1]
         if folder_name == 'best_images':
             continue
-        target_image = PIL.Image.open(resolve_path(options.dataset_dir, folder_name, folder_name + '_0001.jpg'))
-        target_feature = T(transform_T(target_image).to(device).unsqueeze(0)).unsqueeze(0)
-        _, reconstructed_features = extract_target_features(T, img_size_T,
-            options.NbNet_dir, folder_name, True, device)
-        cossims = np.append(cossims, criterion(target_feature.cpu(), reconstructed_features.cpu()))
+        for file_path in glob.glob(folder_path + '/*'):
+            target_file_path = resolve_path(options.dataset_dir, file_name)
+            file_name = file_path[file_path[:-1].rfind('/')+1:-1]
+            reconstructed_feature = extract_feature(file_path, T, transform_T)
+            target_feature = extract_feature(target_file_path, T, transform_T)
+            cossims = np.append(cossims, criterion(target_feature.cpu(), reconstructed_feature.cpu()))
 
     x, _, p = plt.hist(cossims,  bins=50, alpha=0.3, color='g', edgecolor='k', label='reconstructed')
     max_ = normalize_hist(x, p)

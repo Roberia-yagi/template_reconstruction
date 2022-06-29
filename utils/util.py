@@ -60,27 +60,28 @@ def create_logger(name: str, path: Optional[str] = None):
 def resolve_path(*pathes: Tuple[str]) -> str:
     return os.path.expanduser(os.path.join(*pathes))
 
-def extract_target_features(T, img_size, target_image_dir, target_dir_name, single_mode, device):
-    target_imagefolder_path = resolve_path(target_image_dir, target_dir_name)
-    resize = transforms.Resize((img_size, img_size))
-    convert_tensor = transforms.ToTensor()
-    all_target_images = torch.tensor([]).to(device)
-    all_target_features = torch.tensor([]).to(device)
+# To be refactored
+# def extract_target_features(T, img_size, target_image_dir, target_dir_name, single_mode, device):
+#     target_imagefolder_path = resolve_path(target_image_dir, target_dir_name)
+#     resize = transforms.Resize((img_size, img_size))
+#     convert_tensor = transforms.ToTensor()
+#     all_target_images = torch.tensor([]).to(device)
+#     all_target_features = torch.tensor([]).to(device)
 
-    # Convert all taget images in target imagefolder to features
-    for filename in glob.glob(target_imagefolder_path + "/best_image/*.*"):
-        target_image = PIL.Image.open(filename)
-        converted_target_image = convert_tensor(target_image)
-        converted_target_image = resize(converted_target_image).to(device)
-        all_target_images= torch.cat((all_target_images, converted_target_image.unsqueeze(0)))
+#     # Convert all taget images in target imagefolder to features
+#     for filename in glob.glob(target_imagefolder_path + "/best_image/*.*"):
+#         target_image = PIL.Image.open(filename)
+#         converted_target_image = convert_tensor(target_image)
+#         converted_target_image = resize(converted_target_image).to(device)
+#         all_target_images= torch.cat((all_target_images, converted_target_image.unsqueeze(0)))
 
-        target_feature = T(converted_target_image.view(1, -1, img_size, img_size)).detach().to(device)
-        all_target_features= torch.cat((all_target_features, target_feature.unsqueeze(0)))
+#         target_feature = T(converted_target_image.view(1, -1, img_size, img_size)).detach().to(device)
+#         all_target_features= torch.cat((all_target_features, target_feature.unsqueeze(0)))
 
-        if single_mode:
-            break
+#         if single_mode:
+#             break
 
-    return all_target_images, all_target_features
+#     return all_target_images, all_target_features
 
 def load_model_as_feature_extractor(arch: str, embedding_size: int, mode: str, path: str, pretrained=False) -> Tuple[nn.Module, int]:
     if not mode in ['train', 'eval']:
