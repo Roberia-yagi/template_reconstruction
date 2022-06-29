@@ -200,7 +200,7 @@ def main():
     used_identity = set()
     reconstruction_count = 0
 
-    torch.seed(options.seed)
+    torch.manual_seed(options.seed)
     dataloader = DataLoader(
         dataset,
         batch_size=1,
