@@ -200,7 +200,7 @@ def main():
     used_identity = set()
     reconstruction_count = 0
 
-    torch.seed(options.seed)
+    torch.manual_seed(options.seed)
     dataloader = DataLoader(
         dataset,
         batch_size=1,
@@ -217,10 +217,10 @@ def main():
         target_feature = C(T(transform_T(data).unsqueeze(0))).detach()
 
         folder_name = filename[:filename.rfind('.')]
-        if label in used_identity:
+        if folder_name in used_identity:
             continue
         else:
-            used_identity.add(label)
+            used_identity.add(folder_name)
             reconstruction_count += 1
 
         if options.resume > reconstruction_count:
