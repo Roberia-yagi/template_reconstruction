@@ -11,10 +11,12 @@ from typing import Any, Tuple
 import torch
 from torch import nn
 from torchvision import transforms
+from torch.utils.data import DataLoader
 from torchvision.utils import save_image
 from torch import optim
 
 from utils.lfw import LFW
+from utils.ijb import IJB
 from utils.util import (resolve_path, save_json, create_logger, get_img_size,load_attacker_discriminator, load_attacker_generator, 
                         load_json, load_model_as_feature_extractor, RandomBatchLoader, get_img_size, get_freer_gpu)
 
@@ -154,29 +156,48 @@ def main():
         transforms.Resize((img_size_A, img_size_A)),
     ])
 
-    dataset = LFW(
-        base_dir='../../../dataset/LFWA/lfw-deepfunneled-MTCNN160',
-        transform=transforms.Compose([
-            transforms.ToTensor(),
-        ]),
+    if options.dataset == 'LFW':
+        dataset = LFW( base_dir='../../../dataset/LFWA/lfw-deepfunneled-MTCNN160',
+            transform=transforms.Compose([
+                transforms.ToTensor(),
+            ]),
+        )
+    elif options.dataset == 'IJB-C':
+        dataset = IJB(
+            base_dir='../../../dataset/IJB-C_cropped/screened/img',
+            transform=transforms.Compose([
+                transforms.ToTensor(),
+            ]),
+        )
+    used_identity = set()
+    reconstruction_count = 0
+
+    torch.manual_seed(options.seed)
+    dataloader = DataLoader(
+        dataset,
+        batch_size=1,
+        shuffle=True,
+        # Optimization:
+        num_workers=os.cpu_count(),
+        pin_memory=True
     )
     used_identity = set()
     reconstruction_count = 0
 
-    for i, (data, label) in enumerate(dataset):
+
+    for i, (data, (label, filename)) in enumerate(dataset):
         if reconstruction_count >= options.num_of_images:
             break
         data = data.to(device)
         target_feature = A(transform_A(data).unsqueeze(0))
 
-        folder_name = label[:label.rfind('.')]
-        identity_name = folder_name[:label.rfind('_')]
-        if identity_name in used_identity:
+        folder_name = filename[:filename.rfind('.')]
+        if folder_name in used_identity:
             continue
         else:
-            used_identity.add(identity_name)
+            used_identity.add(folder_name)
             reconstruction_count += 1
-            
+
         reconstructed_result_dir = resolve_path(result_dir, folder_name)
         os.makedirs(reconstructed_result_dir, exist_ok=False)
 
@@ -223,13 +244,22 @@ def main():
                 loss_update_counter += 1
 
         logger.info(f"{label} image has been reconstructed in {epoch} epochs")
+        
+        del L_prior_loss
+        del L_id_loss
+        del total_loss
+        del L_prior_loss_avg
+        del L_id_loss_avg
+        del total_loss_avg
+        torch.cuda.empty_cache()
             
         # Save results
         result_dataloader = RandomBatchLoader(z, options.batch_size)
 
         # Calc 
-        for _, batch in enumerate(result_dataloader):
-            images = G(batch)
+        for _, batch in enumerate(z):
+            batch = batch.unsqueeze(0)
+            images = G(batch).detach()
 
             best_image, best_cossim = get_best_image(A, images, img_size_A, target_feature)
 
@@ -242,7 +272,7 @@ def main():
         target_images_path = resolve_path(reconstructed_result_dir, f"target_images.png")
         save_image(data, target_images_path, normalize=True)
 
-        print(f'{reconstruction_count}/{options.num_of_images} has been done')
+        logger.info(f'{reconstruction_count}/{options.num_of_images} has been done')
 
     elapsed_time = time.time() - start_time
     logger.debug(f"[Elapsed time of all epochs: {elapsed_time}]")
