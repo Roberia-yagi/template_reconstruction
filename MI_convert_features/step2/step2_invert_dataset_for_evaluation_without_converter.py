@@ -30,6 +30,7 @@ def get_options() -> Any:
     parser.add_argument("--multi_gpu", action='store_true', help="flag of multi gpu")
     
     # Dir
+    parser.add_argument("--dataset", type=str, default='IJB-C', help='test dataset:["LFWA, IJB-C"]')
     parser.add_argument("--result_dir", type=str, default="../../../results/dataset_reconstructed", help="path to directory which includes results")
     parser.add_argument("--GAN_dir", type=str, default="../../../results/common/step2/pure_facenet_500epoch_features", help="path to directory which includes the step1 result")
     parser.add_argument('--attack_model_path', default='', type=str, help='path to pretrained attack model')
