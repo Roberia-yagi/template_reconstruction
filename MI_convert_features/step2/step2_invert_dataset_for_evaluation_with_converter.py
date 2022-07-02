@@ -217,10 +217,10 @@ def main():
         target_feature = C(T(transform_T(data).unsqueeze(0))).detach()
 
         folder_name = filename[:filename.rfind('.')]
-        if folder_name in used_identity:
+        if label in used_identity:
             continue
         else:
-            used_identity.add(folder_name)
+            used_identity.add(label)
             reconstruction_count += 1
 
         if options.resume > reconstruction_count:

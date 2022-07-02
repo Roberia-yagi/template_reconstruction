@@ -30,7 +30,7 @@ def get_options() -> Any:
     parser.add_argument("--multi_gpu", action='store_true', help="flag of multi gpu")
     
     # Dir
-    parser.add_argument("--result_dir", type=str, default="../../..//results/dataset_reconstructed", help="path to directory which includes results")
+    parser.add_argument("--result_dir", type=str, default="../../../results/dataset_reconstructed", help="path to directory which includes results")
     parser.add_argument("--GAN_dir", type=str, default="../../../results/common/step2/pure_facenet_500epoch_features", help="path to directory which includes the step1 result")
     parser.add_argument('--attack_model_path', default='', type=str, help='path to pretrained attack model')
 
@@ -38,16 +38,16 @@ def get_options() -> Any:
     parser.add_argument("--batch_size", type=int, default=64, help="size of the batches")
     parser.add_argument("--epochs", type=int, default=100, help="times to initialize z") 
     parser.add_argument("--learning_rate", type=float, default=0.035, help="learning rate")
-    parser.add_argument("--momentum", type=float, default=0.9, help="learning rate")
     parser.add_argument("--lambda_i", type=float, default=100, help="learning rate")
+    parser.add_argument("--resume", type=int, default=-1, help="image of resume")
 
     # Conditions
     parser.add_argument("--latent_dim", type=int, default=100, help="dimensionality of the latent space")
     parser.add_argument("--img_channels", type=int, default=3, help="number of image channels")
     parser.add_argument("--attack_model", type=str, default="FaceNet", help="attack model: 'FaceNet', 'Arcface', 'Magface")
-    parser.add_argument("--AE_ver", type=int, default=1.1, help="AE version: 1, 1.1, 1.2, 1.3, 1.4")
     parser.add_argument("--embedding_size", type=int, default=512, help="embedding size of features of target model:[128, 512]")
     parser.add_argument("--num_of_images", type=int, default=300, help="size of test dataset")
+    parser.add_argument("--seed", type=int, default=0, help="seed for pytorch dataloader shuffle")
 
     opt = parser.parse_args()
 
@@ -244,7 +244,7 @@ def main():
                 loss_update_counter += 1
 
         logger.info(f"{label} image has been reconstructed in {epoch} epochs")
-        
+
         del L_prior_loss
         del L_id_loss
         del total_loss
