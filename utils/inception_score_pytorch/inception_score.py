@@ -5,6 +5,7 @@ from torch import nn
 from torch.autograd import Variable
 from torch.nn import functional as F
 from lfw import LFW
+from tqdm import tqdm
 import torch.utils.data
 
 from torchvision.models.inception import inception_v3
@@ -46,7 +47,7 @@ def inception_score(imgs, device, batch_size=32, resize=False, splits=1):
     # Get predictions
     preds = np.zeros((N, 1000))
 
-    for i, batch in enumerate(dataloader, 0):
+    for i, batch in enumerate(tqdm(dataloader, 0)):
         batch = batch.to(device)
         batchv = Variable(batch)
         batch_size_i = batch.size()[0]
@@ -56,7 +57,7 @@ def inception_score(imgs, device, batch_size=32, resize=False, splits=1):
     # Now compute the mean kl-div
     split_scores = []
 
-    for k in range(splits):
+    for k in tqdm(range(splits)):
         part = preds[k * (N // splits): (k+1) * (N // splits), :]
         py = np.mean(part, axis=0)
         scores = []

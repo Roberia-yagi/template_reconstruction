@@ -104,15 +104,16 @@ def main():
     result_dir = resolve_path(options.result_dir, (options.identifier + '_' + step1_dir))
     os.makedirs(result_dir, exist_ok=False)
     
-    # Save options by json format
-    save_json(resolve_path(result_dir, "step2.json"), vars(options))
-
     # Create logger
     logger = create_logger(f"Step 2", resolve_path(result_dir, "inference.log"))
 
     step1_dir = options.step1_dir
     step1_options = edict(load_json(resolve_path(options.step1_dir, "step1.json")))
     GAN_options = load_json(resolve_path(options.GAN_dir, "step2.json"))
+
+    # Save options by json format
+    save_json(resolve_path(result_dir, "step1.json"), step1_options)
+    save_json(resolve_path(result_dir, "step2.json"), vars(options))
 
     # Log options
     logger.info(vars(options))
@@ -221,89 +222,90 @@ def main():
             continue
         else:
             used_identity.add(label)
+            print(label, filename)
             reconstruction_count += 1
 
         if options.resume > reconstruction_count:
             continue
             
-        reconstructed_result_dir = resolve_path(result_dir, folder_name)
-        os.makedirs(reconstructed_result_dir, exist_ok=False)
+        # reconstructed_result_dir = resolve_path(result_dir, folder_name)
+        # os.makedirs(reconstructed_result_dir, exist_ok=False)
 
-        # Search z 
-        iteration = int(256 / options.batch_size)
-        z = torch.randn(options.batch_size * iteration, options.latent_dim, requires_grad=True, device=device) 
-        optimizer = optim.Adam([z], lr=options.learning_rate, betas=(0.9, 0.999), weight_decay=0)
-        dataloader = RandomBatchLoader(z, options.batch_size)
+        # # Search z 
+        # iteration = int(256 / options.batch_size)
+        # z = torch.randn(options.batch_size * iteration, options.latent_dim, requires_grad=True, device=device) 
+        # optimizer = optim.Adam([z], lr=options.learning_rate, betas=(0.9, 0.999), weight_decay=0)
+        # dataloader = RandomBatchLoader(z, options.batch_size)
 
-        # Optimize z
-        start_time = time.time()
-        best_total_loss_avg = 1e9
-        loss_update_counter = 0
-        for epoch in range(1, options.epochs + 1):
-            L_prior_loss_avg, L_id_loss_avg, total_loss_avg = 0, 0, 0
+        # # Optimize z
+        # start_time = time.time()
+        # best_total_loss_avg = 1e9
+        # loss_update_counter = 0
+        # for epoch in range(1, options.epochs + 1):
+        #     L_prior_loss_avg, L_id_loss_avg, total_loss_avg = 0, 0, 0
 
-            if loss_update_counter >= 20:
-                break
+        #     if loss_update_counter >= 20:
+        #         break
 
-            for _, batch in enumerate(dataloader):
-                optimizer.zero_grad()
+        #     for _, batch in enumerate(dataloader):
+        #         optimizer.zero_grad()
 
-                L_prior_loss = L_prior(D, G, batch)
-                L_id_loss = calc_id_loss(G, A, batch, device, target_feature, img_size_A) 
+        #         L_prior_loss = L_prior(D, G, batch)
+        #         L_id_loss = calc_id_loss(G, A, batch, device, target_feature, img_size_A) 
                 
-                L_id_loss = options.lambda_i * L_id_loss
-                total_loss = L_prior_loss + L_id_loss
+        #         L_id_loss = options.lambda_i * L_id_loss
+        #         total_loss = L_prior_loss + L_id_loss
 
-                L_prior_loss_avg += L_prior_loss
-                L_id_loss_avg += L_id_loss
-                total_loss_avg += total_loss
+        #         L_prior_loss_avg += L_prior_loss
+        #         L_id_loss_avg += L_id_loss
+        #         total_loss_avg += total_loss
 
-                total_loss.backward()
-                optimizer.step()
+        #         total_loss.backward()
+        #         optimizer.step()
 
-                L_prior_loss_avg /= z.shape[0]
-                L_id_loss_avg /= z.shape[0]
-                total_loss_avg /= z.shape[0]
+        #         L_prior_loss_avg /= z.shape[0]
+        #         L_id_loss_avg /= z.shape[0]
+        #         total_loss_avg /= z.shape[0]
 
-            if total_loss_avg.item() < best_total_loss_avg:
-                best_total_loss_avg = total_loss_avg.item()
-                loss_update_counter = 0
-            else:
-                loss_update_counter += 1
+        #     if total_loss_avg.item() < best_total_loss_avg:
+        #         best_total_loss_avg = total_loss_avg.item()
+        #         loss_update_counter = 0
+        #     else:
+        #         loss_update_counter += 1
 
-        logger.info(f"{label} image has been reconstructed in {epoch} epochs")
+        # logger.info(f"{label} image has been reconstructed in {epoch} epochs")
 
-        del L_prior_loss
-        del L_id_loss
-        del total_loss
-        del L_prior_loss_avg
-        del L_id_loss_avg
-        del total_loss_avg
-        torch.cuda.empty_cache()
+        # del L_prior_loss
+        # del L_id_loss
+        # del total_loss
+        # del L_prior_loss_avg
+        # del L_id_loss_avg
+        # del total_loss_avg
+        # torch.cuda.empty_cache()
 
-        # Save results
-        result_dataloader = RandomBatchLoader(z, options.batch_size)
+        # # Save results
+        # result_dataloader = RandomBatchLoader(z, options.batch_size)
 
-        # Calc 
-        for _, batch in enumerate(z):
-            batch = batch.unsqueeze(0)
-            images = G(batch).detach()
+        # # Calc 
+        # for _, batch in enumerate(z):
+        #     batch = batch.unsqueeze(0)
+        #     images = G(batch).detach()
 
-            best_image, best_cossim = get_best_image(A, images, img_size_A, target_feature)
+        #     best_image, best_cossim = get_best_image(A, images, img_size_A, target_feature)
 
-            best_images_path = resolve_path(reconstructed_result_dir, f"best_images_{best_cossim}.png")
-            save_image(best_image, best_images_path, normalize=True, nrow=iteration)
+        #     best_images_path = resolve_path(reconstructed_result_dir, f"best_images_{best_cossim}.png")
+        #     save_image(best_image, best_images_path, normalize=True, nrow=iteration)
 
-        logger.info(f"[Saved all best images: {reconstructed_result_dir}]")
+        # logger.info(f"[Saved all best images: {reconstructed_result_dir}]")
 
-        # Save all target images
-        target_images_path = resolve_path(reconstructed_result_dir, f"target_images.png")
-        save_image(data, target_images_path, normalize=True)
+        # # Save all target images
+        # target_images_path = resolve_path(reconstructed_result_dir, f"target_images.png")
+        # save_image(data, target_images_path, normalize=True)
 
-        logger.info(f'{reconstruction_count}/{options.num_of_images} has been done')
+        # logger.info(f'{reconstruction_count}/{options.num_of_images} has been done')
 
-    elapsed_time = time.time() - start_time
-    logger.debug(f"[Elapsed time of all epochs: {elapsed_time}]")
+    # elapsed_time = time.time() - start_time
+    # logger.debug(f"[Elapsed time of all epochs: {elapsed_time}]")
 
 if __name__=='__main__':
     main()

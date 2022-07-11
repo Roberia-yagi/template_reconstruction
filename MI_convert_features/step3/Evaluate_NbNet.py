@@ -58,6 +58,7 @@ def calculate_inception_score(data_dir):
 def extract_feature(image_dir, model, transform):
     image = PIL.Image.open(image_dir)
     feature = model(transform(image).to(device).unsqueeze(0)).unsqueeze(0)
+    return feature
 
 def get_options() -> Any:
     parser = argparse.ArgumentParser()
@@ -129,19 +130,19 @@ def main():
     criterion = torch.nn.CosineSimilarity(dim=2)
 
     # calculate Inception score
-    inception_score = calculate_inception_score(options.NbNet_dir)
-    logger.info(f'inception score is {inception_score}')
+    # inception_score = calculate_inception_score(options.NbNet_dir)
+    # logger.info(f'inception score is {inception_score}')
 
     # Compare reconstructed image with original image
     cossims = np.array([])
     max__ = 0
     for folder_path in tqdm(glob.glob(options.NbNet_dir + '/*')):
-        folder_name = folder_path[folder_path[:-1].rfind('/')+1:-1]
+        folder_name = folder_path[folder_path[:-1].rfind('/')+1:]
         if folder_name == 'best_images':
             continue
         for file_path in glob.glob(folder_path + '/*'):
-            file_name = file_path[file_path[:-1].rfind('/')+1:-1]
-            target_file_path = resolve_path(options.dataset_dir, file_name)
+            file_name = file_path[file_path[:-1].rfind('/')+1:]
+            target_file_path = resolve_path(options.dataset_dir, folder_name, file_name)
             reconstructed_feature = extract_feature(file_path, T, transform_T)
             target_feature = extract_feature(target_file_path, T, transform_T)
             cossims = np.append(cossims, criterion(target_feature.cpu(), reconstructed_feature.cpu()))

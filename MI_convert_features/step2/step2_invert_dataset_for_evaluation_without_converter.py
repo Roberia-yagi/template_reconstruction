@@ -182,9 +182,6 @@ def main():
         num_workers=os.cpu_count(),
         pin_memory=True
     )
-    used_identity = set()
-    reconstruction_count = 0
-
 
     for i, (data, (label, filename)) in enumerate(dataset):
         if reconstruction_count >= options.num_of_images:
@@ -198,6 +195,9 @@ def main():
         else:
             used_identity.add(folder_name)
             reconstruction_count += 1
+
+        if options.resume > reconstruction_count:
+            continue
 
         reconstructed_result_dir = resolve_path(result_dir, folder_name)
         os.makedirs(reconstructed_result_dir, exist_ok=False)

@@ -17,14 +17,16 @@ import torch
 import numpy as np
 from torch import nn
 from torchvision import transforms
+from torch.utils.data import DataLoader
 from torchvision import datasets
 from torchvision.utils import save_image
 
 from sklearn.metrics import roc_curve
 
+from utils.lfw import LFW
+from utils.ijb import IJB
 from utils.util import (resolve_path, save_json, create_logger, get_img_size, load_json, 
-                        load_model_as_feature_extractor, get_img_size, get_freer_gpu,
-                        extract_target_features)
+                        load_model_as_feature_extractor, get_img_size, get_freer_gpu)
 from utils.inception_score_pytorch.inception_score import inception_score
 
 class IgnoreLabelDataset(torch.utils.data.Dataset):
@@ -63,7 +65,7 @@ def get_options() -> Any:
     time_stamp = datetime.datetime.now().strftime("%Y_%m_%d_%H_%M")
     parser.add_argument("--identifier", type=str, default=time_stamp, help="timestamp")
     parser.add_argument("--result_dir", type=str, default="../../../results/evaluation_results", help="path to directory which includes results")
-    parser.add_argument("--dataset_dir", type=str, default="../../../dataset/LFWA/lfw-deepfunneled-MTCNN160", help="path to dataset directory")
+    parser.add_argument("--dataset_dir", type=str, default="../../../dataset/IJB-C_cropped/screened/img", help="path to dataset directory")
     parser.add_argument("--step2_dir", type=str, required=True, help="path to directory which includes the step2 result")
     parser.add_argument("--embedding_size", type=int, default=512, help="dimensionality of the latent space")
     parser.add_argument("--target_model_path", type=str, help='path to pretrained model')
@@ -71,6 +73,8 @@ def get_options() -> Any:
                         help="path to directory which includes the pickle of original data")
     parser.add_argument("--diff_pickle_path", type=str, default='/home/akasaka/nas/results/show_model_acc_with_hist_LFW/2022_06_21_11_01/Magface_diff_cossim.pkl',
                         help="path to directory which includes the pickle of original data")
+    parser.add_argument("--seed", type=int, default=0, help="seed for pytorch dataloader shuffle")
+    parser.add_argument("--num_of_images", type=int, default=300, help="size of test dataset")
 
     opt = parser.parse_args()
     return opt
@@ -137,19 +141,28 @@ def main():
     inception_score = calculate_inception_score(resolve_path(options.step2_dir, 'best_images'))
     logger.info(f'inception score is {inception_score}')
 
+
     # Compare reconstructed image with original image
     cossims = np.array([])
     max__ = 0
-    for folder_path in tqdm(glob.glob(options.step2_dir + '/*/')):
-        folder_name = folder_path[folder_path[:-1].rfind('/')+1:-1]
-        if folder_name == 'best_images':
-            continue
-        identity_name = folder_name[:folder_name.rfind('_')]
-        target_image = PIL.Image.open(resolve_path(options.dataset_dir, identity_name, folder_name + '.jpg'))
-        target_feature = T(transform_T(target_image).to(device).unsqueeze(0)).unsqueeze(0)
-        _, reconstructed_features = extract_target_features(T, img_size_T,
-            options.step2_dir, folder_name, True, device)
-        cossims = np.append(cossims, criterion(target_feature.cpu(), reconstructed_features.cpu()))
+    # TODO: dataloader -> dataset
+    # data: tensor of image
+    # label: identity (100 or Akasaka)
+    # filename: filename of image (16523.jpg)
+    organized_image_folder = resolve_path(options.step2_dir, 'organized_folder')
+    # folder_name = label
+    for reconstructed_folder_path in glob.glob(organized_image_folder + '/*'):
+        folder_name = reconstructed_folder_path[reconstructed_folder_path.rfind('/')+1:-1]
+        for reconstructed_file_path in glob.glob(reconstructed_folder_path + '/*'):
+            file_name = reconstructed_file_path[reconstructed_file_path.rfind('/')+1:]
+            reconstrected_best_image_path = glob.glob(resolve_path(reconstructed_file_path, 'best_image') + '/*')[0]
+            reconstructed_image = PIL.Image.open(reconstrected_best_image_path)
+            reconstructed_feature = T(transform_T(reconstructed_image).to(device).unsqueeze(0)).unsqueeze(0)
+
+            target_image_path = resolve_path(options.dataset_dir, folder_name, file_name + '.jpg')
+            target_image = PIL.Image.open(target_image_path)
+            target_feature = T(transform_T(target_image).to(device).unsqueeze(0)).unsqueeze(0)
+            cossims = np.append(cossims, criterion(target_feature.cpu(), reconstructed_feature.cpu()))
 
     x, _, p = plt.hist(cossims,  bins=50, alpha=0.3, color='g', edgecolor='k', label='reconstructed')
     max_ = normalize_hist(x, p)

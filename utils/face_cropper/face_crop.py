@@ -40,14 +40,13 @@ def main():
     # Create MTCNN
     mtcnn = MTCNN()
 
-    foldernames = glob(dataset_in_dir + '/img')
+    foldernames = glob(dataset_in_dir + '/img/*')
 
     # change the range to variable
     for foldername in tqdm(foldernames):
         out_folder_path = resolve_path(dataset_out_dir, foldername[foldername.rfind('/', 2)+1:])
         os.makedirs(out_folder_path, exist_ok=True)
         for filename in glob(foldername + '/*'):
-            print(filename)
             out_path = resolve_path(out_folder_path, filename[filename.rfind('/')+1:])
 
             img = Image.open(filename)
