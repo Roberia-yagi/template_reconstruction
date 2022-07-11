@@ -390,10 +390,14 @@ def main():
     best_loss = 1e9
     best_loss_test = 1e9
     loss_update_counter = 0
+
+    # Set resume
     if options.resume:
         start_epoch = options.resume_epoch
     else:
         start_epoch = 0
+
+    # Start training
     for epoch in range(start_epoch + 1, options.n_epochs + 1):
         if loss_update_counter > options.early_stop:
             break
