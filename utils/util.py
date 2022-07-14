@@ -29,6 +29,7 @@ from my_models.Discriminator3 import Discriminator3
 from my_models.Generator3 import Generator3
 
 
+
 def save_json(path: str, obj: Any):
     with open(path, "w") as json_file:
         json.dump(obj, json_file, indent=4)
@@ -59,6 +60,9 @@ def create_logger(name: str, path: Optional[str] = None):
 
 def resolve_path(*pathes: Tuple[str]) -> str:
     return os.path.expanduser(os.path.join(*pathes))
+
+def remove_path_prefix(path: str) -> str:
+    return path[path.rfind('/')+1:]
 
 # To be refactored
 # def extract_target_features(T, img_size, target_image_dir, target_dir_name, single_mode, device):

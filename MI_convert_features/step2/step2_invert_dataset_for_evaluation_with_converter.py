@@ -1,5 +1,7 @@
 import sys
 import time
+from unittest import result
+
 
 sys.path.append('../')
 sys.path.append('../../')
@@ -18,6 +20,7 @@ from torch import optim
 
 from utils.lfw import LFW
 from utils.ijb import IJB
+from utils.casia_web_face import CasiaWebFace
 from utils.util import (resolve_path, save_json, create_logger, get_img_size,load_attacker_discriminator, load_attacker_generator, 
                         load_autoencoder, load_json, load_model_as_feature_extractor, RandomBatchLoader, get_img_size, get_freer_gpu)
 
@@ -33,7 +36,7 @@ def get_options() -> Any:
     parser.add_argument("--multi_gpu", action='store_true', help="flag of multi gpu")
     
     # Dir
-    parser.add_argument("--dataset", type=str, default='IJB-C', help='test dataset:["LFWA, IJB-C"]')
+    parser.add_argument("--dataset", type=str, default='CASIA', help='test dataset:[LFWA, IJB-C, CASIA]')
     parser.add_argument("--result_dir", type=str, default="../../../results/dataset_reconstructed", help="path to directory which includes results")
     parser.add_argument("--step1_dir", type=str, required=True, help="path to directory which includes the step1 result")
     parser.add_argument("--GAN_dir", type=str, default="../../../results/common/step2/pure_facenet_500epoch_features", help="path to directory which includes the step1 result")
@@ -48,7 +51,8 @@ def get_options() -> Any:
     # Conditions
     parser.add_argument("--latent_dim", type=int, default=100, help="dimensionality of the latent space")
     parser.add_argument("--img_channels", type=int, default=3, help="number of image channels")
-    parser.add_argument("--num_of_images", type=int, default=300, help="size of test dataset")
+    parser.add_argument("--num_of_identities", type=int, default=300, help="size of test dataset")
+    parser.add_argument("--num_per_identity", type=int, default=2, help="size of test dataset")
     parser.add_argument("--seed", type=int, default=0, help="seed for pytorch dataloader shuffle")
 
     opt = parser.parse_args()
@@ -198,6 +202,17 @@ def main():
                 transforms.ToTensor(),
             ]),
         )
+    elif options.dataset == 'CASIA':
+        dataset = CasiaWebFace(base_dir='../../../dataset/CASIAWebFace_MTCNN160',
+                            usage='eval',
+                            num_of_identities=7000,
+                            num_per_identity=20,
+                            eval_num_of_identities=options.num_of_identities,
+                            eval_num_per_identity=options.num_per_identity,\
+                            transform=transforms.Compose([
+                                transforms.ToTensor(),
+                            ]),
+                        )
     used_identity = set()
     reconstruction_count = 0
 
@@ -211,101 +226,116 @@ def main():
         pin_memory=True
     )
 
-    for i, (data, (label, filename)) in enumerate(dataset):
-        if reconstruction_count >= options.num_of_images:
+    num_of_images = options.num_of_identities * options.num_per_identity
+    for data, (labels, filenames) in dataloader:
+        if reconstruction_count >= num_of_images:
             break
         data = data.to(device)
-        target_feature = C(T(transform_T(data).unsqueeze(0))).detach()
+        target_feature = C(T(transform_T(data))).detach()
 
-        folder_name = filename[:filename.rfind('.')]
-        if label in used_identity:
-            continue
-        else:
-            used_identity.add(label)
-            print(label, filename)
+        if options.dataset == 'CASIA':
             reconstruction_count += 1
+        else:
+            for label in labels:
+                if label in used_identity:
+                    continue
+                else:
+                    used_identity.add(label)
+                    reconstruction_count += 1
 
         if options.resume > reconstruction_count:
             continue
             
-        # reconstructed_result_dir = resolve_path(result_dir, folder_name)
-        # os.makedirs(reconstructed_result_dir, exist_ok=False)
+        # result dir - label1 - image1
+        #                     - image2
+        #            - label2
+        #                     - image3
+        #                     - image4
 
-        # # Search z 
-        # iteration = int(256 / options.batch_size)
-        # z = torch.randn(options.batch_size * iteration, options.latent_dim, requires_grad=True, device=device) 
-        # optimizer = optim.Adam([z], lr=options.learning_rate, betas=(0.9, 0.999), weight_decay=0)
-        # dataloader = RandomBatchLoader(z, options.batch_size)
+        for label, filename in zip(labels, filenames):
+            result_label_dir = resolve_path(result_dir, label)
+            result_filename_dir = resolve_path(result_label_dir, filename)
+            if not os.path.isdir(result_label_dir):
+                os.makedirs(result_label_dir, exist_ok=False)
+            if not os.path.isdir(result_filename_dir):
+                os.makedirs(result_filename_dir, exist_ok=False)
 
-        # # Optimize z
-        # start_time = time.time()
-        # best_total_loss_avg = 1e9
-        # loss_update_counter = 0
-        # for epoch in range(1, options.epochs + 1):
-        #     L_prior_loss_avg, L_id_loss_avg, total_loss_avg = 0, 0, 0
+        # Search z 
+        iteration = int(256 / options.batch_size)
+        z = torch.randn(options.batch_size * iteration, options.latent_dim, requires_grad=True, device=device) 
+        optimizer = optim.Adam([z], lr=options.learning_rate, betas=(0.9, 0.999), weight_decay=0)
+        dataloader = RandomBatchLoader(z, options.batch_size)
 
-        #     if loss_update_counter >= 20:
-        #         break
+        # Optimize z
+        start_time = time.time()
+        best_total_loss_avg = 1e9
+        loss_update_counter = 0
+        for epoch in range(1, options.epochs + 1):
+            L_prior_loss_avg, L_id_loss_avg, total_loss_avg = 0, 0, 0
 
-        #     for _, batch in enumerate(dataloader):
-        #         optimizer.zero_grad()
+            if loss_update_counter >= 20:
+                break
 
-        #         L_prior_loss = L_prior(D, G, batch)
-        #         L_id_loss = calc_id_loss(G, A, batch, device, target_feature, img_size_A) 
+            for _, batch in enumerate(dataloader):
+                optimizer.zero_grad()
+
+                L_prior_loss = L_prior(D, G, batch)
+                L_id_loss = calc_id_loss(G, A, batch, device, target_feature, img_size_A) 
                 
-        #         L_id_loss = options.lambda_i * L_id_loss
-        #         total_loss = L_prior_loss + L_id_loss
+                L_id_loss = options.lambda_i * L_id_loss
+                total_loss = L_prior_loss + L_id_loss
 
-        #         L_prior_loss_avg += L_prior_loss
-        #         L_id_loss_avg += L_id_loss
-        #         total_loss_avg += total_loss
+                L_prior_loss_avg += L_prior_loss
+                L_id_loss_avg += L_id_loss
+                total_loss_avg += total_loss
 
-        #         total_loss.backward()
-        #         optimizer.step()
+                total_loss.backward()
+                optimizer.step()
 
-        #         L_prior_loss_avg /= z.shape[0]
-        #         L_id_loss_avg /= z.shape[0]
-        #         total_loss_avg /= z.shape[0]
+                L_prior_loss_avg /= z.shape[0]
+                L_id_loss_avg /= z.shape[0]
+                total_loss_avg /= z.shape[0]
 
-        #     if total_loss_avg.item() < best_total_loss_avg:
-        #         best_total_loss_avg = total_loss_avg.item()
-        #         loss_update_counter = 0
-        #     else:
-        #         loss_update_counter += 1
+            if total_loss_avg.item() < best_total_loss_avg:
+                best_total_loss_avg = total_loss_avg.item()
+                loss_update_counter = 0
+            else:
+                loss_update_counter += 1
 
-        # logger.info(f"{label} image has been reconstructed in {epoch} epochs")
+        for label in labels:
+            logger.info(f"{label} image has been reconstructed in {epoch} epochs")
 
-        # del L_prior_loss
-        # del L_id_loss
-        # del total_loss
-        # del L_prior_loss_avg
-        # del L_id_loss_avg
-        # del total_loss_avg
-        # torch.cuda.empty_cache()
+        del L_prior_loss
+        del L_id_loss
+        del total_loss
+        del L_prior_loss_avg
+        del L_id_loss_avg
+        del total_loss_avg
+        torch.cuda.empty_cache()
 
-        # # Save results
-        # result_dataloader = RandomBatchLoader(z, options.batch_size)
+        # Save results
+        result_dataloader = RandomBatchLoader(z, options.batch_size)
 
-        # # Calc 
-        # for _, batch in enumerate(z):
-        #     batch = batch.unsqueeze(0)
-        #     images = G(batch).detach()
+        # Calc 
+        for _, batch in enumerate(z):
+            batch = batch.unsqueeze(0)
+            images = G(batch).detach()
 
-        #     best_image, best_cossim = get_best_image(A, images, img_size_A, target_feature)
+            best_image, best_cossim = get_best_image(A, images, img_size_A, target_feature)
 
-        #     best_images_path = resolve_path(reconstructed_result_dir, f"best_images_{best_cossim}.png")
-        #     save_image(best_image, best_images_path, normalize=True, nrow=iteration)
+            best_images_path = resolve_path(result_filename_dir, f"best_images_{best_cossim}.png")
+            save_image(best_image, best_images_path, normalize=True, nrow=iteration)
 
-        # logger.info(f"[Saved all best images: {reconstructed_result_dir}]")
+        logger.info(f"[Saved all best images: {result_filename_dir}]")
 
-        # # Save all target images
-        # target_images_path = resolve_path(reconstructed_result_dir, f"target_images.png")
-        # save_image(data, target_images_path, normalize=True)
+        # Save all target images
+        target_images_path = resolve_path(result_filename_dir, f"target_images.png")
+        save_image(data, target_images_path, normalize=True)
 
-        # logger.info(f'{reconstruction_count}/{options.num_of_images} has been done')
+        logger.info(f'{reconstruction_count}/{num_of_images} has been done')
 
-    # elapsed_time = time.time() - start_time
-    # logger.debug(f"[Elapsed time of all epochs: {elapsed_time}]")
+    elapsed_time = time.time() - start_time
+    logger.debug(f"[Elapsed time of all epochs: {elapsed_time}]")
 
 if __name__=='__main__':
     main()

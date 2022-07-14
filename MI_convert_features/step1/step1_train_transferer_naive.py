@@ -328,16 +328,22 @@ def main():
                            usage='train',
                            num_of_identities=options.num_of_identities,
                            num_per_identity=options.num_per_identity,
+                           eval_num_of_identities=options.eval_num_of_identities,
+                           eval_num_per_identity=options.eval_num_per_identity,
                            transform=transforms.ToTensor())
     test_dataset = CasiaWebFace(base_dir=options.dataset_dir,
                            usage='test',
                            num_of_identities=options.num_of_identities,
                            num_per_identity=options.num_per_identity,
+                           eval_num_of_identities=options.eval_num_of_identities,
+                           eval_num_per_identity=options.eval_num_per_identity,
                            transform=transforms.ToTensor())
     val_dataset = CasiaWebFace(base_dir=options.dataset_dir,
                            usage='valid',
                            num_of_identities=options.num_of_identities,
                            num_per_identity=options.num_per_identity,
+                           eval_num_of_identities=options.eval_num_of_identities,
+                           eval_num_per_identity=options.eval_num_per_identity,
                            transform=transforms.ToTensor())
 
     train_dataloader = DataLoader(
