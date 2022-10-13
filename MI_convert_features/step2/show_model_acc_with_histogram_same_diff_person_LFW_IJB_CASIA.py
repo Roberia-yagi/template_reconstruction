@@ -39,7 +39,7 @@ def get_options() -> Any:
     parser.add_argument("--identifier", type=str, default=time_stamp, help="timestamp")
     parser.add_argument("--result_dir", type=str, default="../../../results/show_model_acc_with_hist_LFW",
                         help="path to directory which includes results")
-    parser.add_argument("--dataset", type=str, default="LFW", help="test dataset:[LFW, IJB-C]")
+    parser.add_argument("--dataset", type=str, required=True, help="test dataset:[LFW, IJB-C, CASIA]")
 
 
     # System preferences
@@ -148,6 +148,15 @@ def main():
     elif options.dataset == 'IJB-C':
         dataset = IJB(
             base_dir='../../../dataset/IJB-C_cropped/screened/img',
+            transform=transforms.Compose([
+                transforms.Resize((img_size, img_size)),
+                transforms.ToTensor(),
+            ]),
+            opencv=opencv
+        )
+    elif options.dataset == 'CASIA':
+        dataset = IJB(
+            base_dir='../../../dataset/CASIAWebFace_MTCNN160',
             transform=transforms.Compose([
                 transforms.Resize((img_size, img_size)),
                 transforms.ToTensor(),

@@ -16,7 +16,6 @@ from torch import nn
 from torch import optim
 from torchvision import transforms
 from torchvision.utils import save_image
-
 from utils.util import (save_json, load_json, create_logger, resolve_path, RandomBatchLoader, get_freer_gpu,
     load_model_as_feature_extractor, load_attacker_discriminator, load_attacker_generator, get_img_size,
     extract_target_features)

@@ -62,7 +62,7 @@ def resolve_path(*pathes: Tuple[str]) -> str:
     return os.path.expanduser(os.path.join(*pathes))
 
 def remove_path_prefix(path: str) -> str:
-    return path[path.rfind('/')+1:]
+    return path[path.rfind('/')+1:].replace(' ', '')
 
 # To be refactored
 # def extract_target_features(T, img_size, target_image_dir, target_dir_name, single_mode, device):
