@@ -1,3 +1,7 @@
+import sys
+import os
+sys.path.append(os.path.dirname(__file__))
+
 import numpy as np
 import torch
 from PIL import Image
@@ -6,24 +10,68 @@ from mtcnn_pytorch.src.get_nets import PNet, RNet, ONet
 from mtcnn_pytorch.src.box_utils import nms, calibrate_box, get_image_boxes, convert_to_square
 from mtcnn_pytorch.src.first_stage import run_first_stage
 from mtcnn_pytorch.src.align_trans import get_reference_facial_points, warp_and_crop_face
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-# device = 'cpu'
+from util import get_freer_gpu
 
 class MTCNN():
-    def __init__(self):
+    def __init__(self, device):
+        orig_folder = os.getcwd()
+        os.chdir(os.path.dirname(os.path.abspath(__file__)))
         self.pnet = PNet().to(device)
         self.rnet = RNet().to(device)
         self.onet = ONet().to(device)
         self.pnet.eval()
         self.rnet.eval()
         self.onet.eval()
+        self.device = device
         self.refrence = get_reference_facial_points(default_square= True)
+        os.chdir(orig_folder)
         
     def align(self, img):
-        _, landmarks = self.detect_faces(img)
-        facial5points = [[landmarks[0][j],landmarks[0][j+5]] for j in range(5)]
+        boxes, landmarks = self.detect_faces(img)
+        # print(f'Number of faces: {len(boxes)}')
+        # for i, (box, landmark) in enumerate(zip(boxes, landmarks)):
+        #     print(f'{i}th landmark is {landmark}')
+        #     print(f'{i}th box is {box}')
+        if len(landmarks) == 0:
+            return None
+        i = self.center_face(boxes, img.size)
+        if i is None:
+            return None
+        facial5points = [[landmarks[i][j],landmarks[i][j+5]] for j in range(5)]
         warped_face = warp_and_crop_face(np.array(img), facial5points, self.refrence, crop_size=(112,112))
         return Image.fromarray(warped_face)
+
+    def center_face(self, boxes, size):
+        min_i = -1
+        max_box_size = -1
+        min_box_center = 1e9
+        width, height = size
+        for i, box in enumerate(boxes):
+            # Largest face box
+            # box_size = (box[2] - box[0]) + (box[3] - box[1])
+            # if box_size > max_box_size:
+            #     max_box_size = box_size
+            #     max_i = i
+
+            # Center face box
+            box_size_x = np.abs((box[2] - box[0])/2 + box[0] - width/2)
+            box_size_y = np.abs((box[3] - box[1])/2 + box[1] - height/2)
+            # print(f'box is {box}')
+            # print(f'x distance from center is {box_size_x}')
+            # print(f'y distance from center is {box_size_y}')
+            box_size = box_size_x + box_size_y
+            
+            if box_size > 50:
+                continue 
+
+            if box_size < min_box_center:
+                min_box_center = box_size
+                min_i = i
+
+        if min_i == -1:
+            return None
+        else:
+            return min_i
     
     def align_multi(self, img, limit=None, min_face_size=30.0):
         boxes, landmarks = self.detect_faces(img, min_face_size)
@@ -82,11 +130,13 @@ class MTCNN():
         with torch.no_grad():
             # run P-Net on different scales
             for s in scales:
-                boxes = run_first_stage(image, self.pnet, scale=s, threshold=thresholds[0])
+                boxes = run_first_stage(image, self.pnet, scale=s, threshold=thresholds[0], device=self.device)
                 bounding_boxes.append(boxes)
 
             # collect boxes (and offsets, and scores) from different scales
             bounding_boxes = [i for i in bounding_boxes if i is not None]
+            if len(bounding_boxes) == 0:
+                return [], []
             bounding_boxes = np.vstack(bounding_boxes)
 
             keep = nms(bounding_boxes[:, 0:5], nms_thresholds[0])
@@ -102,7 +152,7 @@ class MTCNN():
             # STAGE 2
 
             img_boxes = get_image_boxes(bounding_boxes, image, size=24)
-            img_boxes = torch.FloatTensor(img_boxes).to(device)
+            img_boxes = torch.FloatTensor(img_boxes).to(self.device)
 
             output = self.rnet(img_boxes)
             offsets = output[0].cpu().data.numpy()  # shape [n_boxes, 4]
@@ -124,7 +174,7 @@ class MTCNN():
             img_boxes = get_image_boxes(bounding_boxes, image, size=48)
             if len(img_boxes) == 0: 
                 return [], []
-            img_boxes = torch.FloatTensor(img_boxes).to(device)
+            img_boxes = torch.FloatTensor(img_boxes).to(self.device)
             output = self.onet(img_boxes)
             landmarks = output[0].cpu().data.numpy()  # shape [n_boxes, 10]
             offsets = output[1].cpu().data.numpy()  # shape [n_boxes, 4]
@@ -149,3 +199,6 @@ class MTCNN():
             landmarks = landmarks[keep]
 
         return bounding_boxes, landmarks
+
+if __name__=='__main__':
+    model = MTCNN()

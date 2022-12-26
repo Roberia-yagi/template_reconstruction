@@ -2,8 +2,6 @@
 import pickle
 import sys
 
-from sklearn import datasets
-
 sys.path.append("../")
 sys.path.append("../../")
 
@@ -12,22 +10,17 @@ import argparse
 import copy
 import numpy as np
 from random import randint
-from termcolor import cprint
 import time
 import datetime
 from logging import Logger
 from tqdm import tqdm 
-from typing import Any, List, Tuple, Dict
-
-from utils.email_sender import send_email
-from sklearn.model_selection import train_test_split
+from typing import Any, Tuple
 
 import torch
-from torch import cosine_similarity, nn
+from torch import nn
 from torch import optim
 from torch.utils.data import DataLoader
 from torchvision import transforms
-from torchvision.utils import save_image
 
 from utils.casia_web_face import CasiaWebFace
 
@@ -47,7 +40,8 @@ def get_options() -> Any:
 
     # Directories
     parser.add_argument("--result_dir", type=str, default="../../../results/train_transferer_cossim", help="path to directory which includes results")
-    parser.add_argument("--dataset_dir", type=str, default="../../../dataset/CASIAWebFace_MTCNN160", help="path to directory which includes dataset(Fairface)")
+    parser.add_argument("--target_dataset_dir", type=str, default="../../../dataset/CASIAWebFace_MTCNN160", help="path to directory which includes dataset(Fairface)")
+    parser.add_argument("--attack_dataset_dir", type=str, default="../../../dataset/CASIAWebFace_MTCNN112_Arcface", help="path to directory which includes dataset(Fairface)")
     parser.add_argument('--target_model_path', type=str, help='path to pretrained target model')
     parser.add_argument('--attack_model_path', type=str, help='path to pretrained attack model')
     parser.add_argument('--AE_path', type=str, help='path to pretrained AE')
@@ -82,17 +76,6 @@ def get_options() -> Any:
 
     return opt
 
-def compress_labels(labels: List[int]) -> Dict[int, int]:
-    label_map = {}
-
-    index = 0
-    for label in labels:
-        if label not in label_map:
-            label_map[label] = index
-            index += 1
-
-    return label_map
-
 
 def train_target(
     dataloader: DataLoader,
@@ -118,14 +101,17 @@ def train_target(
 
         optimizer.zero_grad()
 
+        # Extract features 
         target_features_T = T(transform_T(images))
+        
+        # Convert features in the target model space to in the attack model space
         converted_target_features_in_A = AE(target_features_T)
-        target_features_A = A(transform_A(images))
-        loss_same = (1 - criterion(target_features_A, converted_target_features_in_A).mean()) / 2
+        target_features_in_A = A(transform_A(images))
+        loss_same = (1 - criterion(target_features_in_A, converted_target_features_in_A).mean()) / 2
         loss_diff = torch.tensor(0.0, dtype=float).to(device)
 
         if options.negative_loss:
-            for converted_target_feature_in_A, target_feature_A, target_label in zip(converted_target_features_in_A, target_features_A, labels):
+            for converted_target_feature_in_A, target_feature_A, target_label in zip(converted_target_features_in_A, target_features_in_A, labels):
                 other_features, other_labels = all_features_labels
                 trimmed_other_features = other_features[other_labels != target_label]
 
@@ -141,16 +127,14 @@ def train_target(
                 loss_diff += torch.abs((converted_cossim - cossim) / 2).mean()
             loss_diff /= len(labels)
 
-        # DELETE
-        if i == 0:
-            cprint(converted_target_features_in_A, 'green')
-            cprint(target_features_A, 'red')
         loss = (loss_same + options.gamma * loss_diff) / 2
+
+        # Log a loss history
         loss_history = np.append(loss_history, torch.clone(loss).detach().cpu().numpy())
         loss_same_history = np.append(loss_same_history, torch.clone(loss_same).detach().cpu().numpy())
         loss_diff_history = np.append(loss_diff_history, torch.clone(loss_diff).detach().cpu().numpy())
-        loss.backward()
 
+        loss.backward()
         optimizer.step()
 
         if i % log_interval == 0:
@@ -324,26 +308,36 @@ def main():
     if isinstance(A, nn.Module):
         A.to(device) 
 
+    # Prepare dataset
+    target_train_dataset = CasiaWebFace(base_dir=options.dataset_dir,
+                           usage='train',
+                           num_of_identities=options.num_of_identities,
+                           num_per_identity=options.num_per_identity,
+                           transform=transforms.ToTensor())
+    target_test_dataset = CasiaWebFace(base_dir=options.dataset_dir,
+                           usage='test',
+                           num_of_identities=options.num_of_identities,
+                           num_per_identity=options.num_per_identity,
+                           transform=transforms.ToTensor())
+    target_val_dataset = CasiaWebFace(base_dir=options.dataset_dir,
+                           usage='valid',
+                           num_of_identities=options.num_of_identities,
+                           num_per_identity=options.num_per_identity,
+                           transform=transforms.ToTensor())
     train_dataset = CasiaWebFace(base_dir=options.dataset_dir,
                            usage='train',
                            num_of_identities=options.num_of_identities,
                            num_per_identity=options.num_per_identity,
-                           eval_num_of_identities=options.eval_num_of_identities,
-                           eval_num_per_identity=options.eval_num_per_identity,
                            transform=transforms.ToTensor())
     test_dataset = CasiaWebFace(base_dir=options.dataset_dir,
                            usage='test',
                            num_of_identities=options.num_of_identities,
                            num_per_identity=options.num_per_identity,
-                           eval_num_of_identities=options.eval_num_of_identities,
-                           eval_num_per_identity=options.eval_num_per_identity,
                            transform=transforms.ToTensor())
     val_dataset = CasiaWebFace(base_dir=options.dataset_dir,
                            usage='valid',
                            num_of_identities=options.num_of_identities,
                            num_per_identity=options.num_per_identity,
-                           eval_num_of_identities=options.eval_num_of_identities,
-                           eval_num_per_identity=options.eval_num_per_identity,
                            transform=transforms.ToTensor())
 
     train_dataloader = DataLoader(
@@ -371,6 +365,7 @@ def main():
         pin_memory=True
     )
 
+    # Prepare transfomer
     transform_T = transforms.Compose([
         transforms.Resize((img_size_T, img_size_T)),
     ])
@@ -378,6 +373,7 @@ def main():
         transforms.Resize((img_size_A, img_size_A)),
     ])
 
+    # Prepare optimizer and criterion
     optimizer = optim.Adam(AE.parameters(), lr=options.learning_rate, betas=(options.beta1, options.beta2), weight_decay=options.weight_decay)
     criterion = nn.CosineSimilarity()
 
@@ -391,7 +387,7 @@ def main():
         features_test, labels_test= None, None
         features_val, labels_val= None, None
 
-    # Train, valid, test model
+    # Initialize variables for training
     best_model_wts = copy.deepcopy(AE.state_dict())
     best_loss = 1e9
     best_loss_test = 1e9
@@ -402,6 +398,10 @@ def main():
         start_epoch = options.resume_epoch
     else:
         start_epoch = 0
+
+    ##########################
+    ### Converter Training ###
+    ##########################
 
     # Start training
     for epoch in range(start_epoch + 1, options.n_epochs + 1):

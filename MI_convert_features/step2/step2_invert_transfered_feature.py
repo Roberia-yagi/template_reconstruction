@@ -30,7 +30,7 @@ def get_options() -> Any:
 
     # Directories
     parser.add_argument("--result_dir", type=str, default="~/nas/results/reconstructed_image", help="path to directory which includes results")
-    parser.add_argument("--step1_dir", type=str, default='', help="path to directory which includes the step1 result")
+    parser.add_argument("--step1_dir", type=str, required=True, help="path to directory which includes the step1 result")
     parser.add_argument("--GAN_dir", type=str, default="~/nas/results/common/step2/pure_facenet_500epoch_features", help="path to directory which includes the step1 result")
     parser.add_argument("--target_image_dir", type=str, default="/home/akasaka/nas/dataset/target_images/Okano_MTCNN160", help="path to directory which contains target images")
     parser.add_argument('--target_model_path', default='', type=str, help='path to pretrained target model')
@@ -133,13 +133,15 @@ def main():
         path=resolve_path(options.GAN_dir, "D.pth"),
         input_dim=GAN_options["img_channels"],
         network_dim=GAN_options["D_network_dim"],
-        img_shape=img_shape_T
+        img_shape=img_shape_T,
+        device=device
     ).to(device)
     G = load_attacker_generator(
         path=resolve_path(options.GAN_dir, "G.pth"),
         latent_dim=options.latent_dim,
         network_dim=GAN_options["G_network_dim"],
-        img_shape=img_shape_T
+        img_shape=img_shape_T,
+        device=device
     ).to(device)
     T, _ = load_model_as_feature_extractor(
         arch=options.target_model,
@@ -158,7 +160,8 @@ def main():
     C = load_autoencoder(
         model_path=resolve_path(step1_dir, 'AE.pth'),
         pretrained=True,
-        mode='eval'
+        mode='eval',
+        ver=step1_options.AE_ver
     ).to(device)
 
     if isinstance(D, nn.Module):
@@ -205,7 +208,8 @@ def main():
     for i in range(1, options.times + 1):
         z = torch.randn(options.batch_size * options.iterations, options.latent_dim, requires_grad=True, device=device)
         # TODO: Change to Adam
-        optimizer = optim.SGD([z], lr=options.learning_rate, momentum=options.momentum)
+        # optimizer = optim.SGD([z], lr=options.learning_rate, momentum=options.momentum)
+        optimizer = optim.Adam([z], lr=options.learning_rate, betas=(0.9, 0.999), weight_decay=0)
         dataloader = RandomBatchLoader(z, options.batch_size)
 
         # Optimize z

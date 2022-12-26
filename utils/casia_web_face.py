@@ -20,10 +20,10 @@ class CasiaWebFace(torch.utils.data.Dataset):
         base_dir: str,
         num_of_identities: int,
         num_per_identity: int,
-        eval_num_of_identities: int,
-        eval_num_per_identity: int,
         usage: str,
         transform: Optional[Callable] = None,
+        eval_num_of_identities = None,
+        eval_num_per_identity = None,
     ) -> None:
 
         if not usage in ['train', 'test', 'valid', 'eval']:
@@ -48,25 +48,28 @@ class CasiaWebFace(torch.utils.data.Dataset):
         for folder in folder_list:
             file_list = glob(resolve_path(folder, '*'))
             label = remove_path_prefix(folder)
-            if len(file_list) >= num_per_identity and num_of_identities > loaded_identities_counter:  
-                self.filenames.extend(file_list[:num_per_identity])
-                self.labels.extend([label] * num_per_identity)
-                loaded_identities_counter += 1
-            else:
-                self.test_filenames.extend(file_list[:num_per_identity])
-                self.test_labels.extend([label] * len(file_list))
+            if len(file_list) >= num_per_identity:
+                if num_of_identities > loaded_identities_counter:
+                    self.filenames.extend(file_list[:num_per_identity])
+                    self.labels.extend([label] * num_per_identity)
+                    loaded_identities_counter += 1
+                else:
+                    self.test_filenames.extend(file_list[:num_per_identity])
+                    # self.test_labels.extend([label] * len(file_list))
+                    self.test_labels.extend([label] * num_per_identity)
 
         # Get a list of images for evaluation which doesn't overlap with training, validating, testing dataset
-        loaded_identities_counter = 0
-        for folder in folder_list:
-            file_list = glob(resolve_path(folder, '*'))
-            label = remove_path_prefix(folder)
-            if label in self.labels:
-                continue
-            if len(file_list) >= eval_num_per_identity and eval_num_of_identities > loaded_identities_counter:  
-                self.eval_filenames.extend(file_list[:eval_num_per_identity])
-                self.eval_labels.extend([label] * eval_num_per_identity)
-                loaded_identities_counter += 1
+        if usage == 'eval':
+            loaded_identities_counter = 0
+            for folder in folder_list:
+                file_list = glob(resolve_path(folder, '*'))
+                label = remove_path_prefix(folder)
+                if label in self.labels:
+                    continue
+                if len(file_list) >= eval_num_per_identity and eval_num_of_identities > loaded_identities_counter:  
+                    self.eval_filenames.extend(file_list[:eval_num_per_identity])
+                    self.eval_labels.extend([label] * eval_num_per_identity)
+                    loaded_identities_counter += 1
 
 
         divider = int(len(self.filenames)/10)

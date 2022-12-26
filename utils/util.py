@@ -4,7 +4,7 @@ import re
 
 sys.path.append(os.path.join(os.path.dirname(__file__)))
 sys.path.append("../")
-import easydict
+from easydict import EasyDict as edict
 import json
 import logging
 import PIL
@@ -36,7 +36,7 @@ def save_json(path: str, obj: Any):
 
 def load_json(path: str) -> Any:
     with open(path) as json_obj:
-        return json.load(json_obj)
+        return edict(json.load(json_obj))
 
 def create_logger(name: str, path: Optional[str] = None):
     logger = logging.getLogger(name)
@@ -166,7 +166,7 @@ def load_model_as_feature_extractor(arch: str, embedding_size: int, mode: str, p
         if mode == 'eval':
             if embedding_size == 512:
                 path = '../../../models/magface_epoch_00025.pth'
-                args = easydict.EasyDict({
+                args = edict({
                     'arch':'iresnet100',
                     'cpu_mode':True,
                     'resume':path,
@@ -178,7 +178,7 @@ def load_model_as_feature_extractor(arch: str, embedding_size: int, mode: str, p
                 load_status = 'Successfully Loaded'
 
             elif embedding_size == 128:
-                args = easydict.EasyDict({
+                args = edict({
                     'arch':'iresnet100',
                     'cpu_mode':True,
                     'resume':path,

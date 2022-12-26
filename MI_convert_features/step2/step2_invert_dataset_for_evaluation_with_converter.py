@@ -2,7 +2,6 @@ import sys
 import time
 from unittest import result
 
-
 sys.path.append('../')
 sys.path.append('../../')
 import os
@@ -76,6 +75,7 @@ def calc_id_loss(G: nn.Module, FE: nn.Module, z: torch.Tensor, device: str, all_
         sum_of_cosine_similarity += metric(target_feature, Gz_features)
     return 1 - torch.mean(sum_of_cosine_similarity / all_target_features.shape[0])
 
+
 def get_best_image(FE: nn.Module, images: nn.Module, image_size: int, all_target_features: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     resize = transforms.Resize((image_size, image_size))
     metric = nn.CosineSimilarity(dim=1)
@@ -88,6 +88,7 @@ def get_best_image(FE: nn.Module, images: nn.Module, image_size: int, all_target
     sum_of_cosine_similarity /= all_target_features.shape[0]
     bestImageIndex = sum_of_cosine_similarity.argmax()
     return images[bestImageIndex], sum_of_cosine_similarity[bestImageIndex]
+
 
 def set_global():
     global options
@@ -112,7 +113,7 @@ def main():
     logger = create_logger(f"Step 2", resolve_path(result_dir, "inference.log"))
 
     step1_dir = options.step1_dir
-    step1_options = edict(load_json(resolve_path(options.step1_dir, "step1.json")))
+    step1_options = edict(load_json(resolve_path(options.step1_dir, "../step1.json")))
     GAN_options = load_json(resolve_path(options.GAN_dir, "step2.json"))
 
     # Save options by json format

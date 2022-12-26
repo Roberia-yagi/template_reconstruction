@@ -16,6 +16,7 @@ class LFW(torch.utils.data.Dataset):
         opencv: bool = False
     ) -> None:
         self.base_dir = base_dir
+        a = base_dir + '/*'
         self.folder_paths= sorted(glob.glob(base_dir + '/*'))
         self.file_paths = []
         self.labels = []

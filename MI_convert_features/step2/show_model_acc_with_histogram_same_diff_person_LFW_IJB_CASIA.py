@@ -12,7 +12,7 @@ from tqdm import tqdm
 import datetime
 import pickle
 
-from typing import Any
+from typing import Any, List, Tuple
 
 import torch
 import torchvision.transforms as transforms
@@ -22,6 +22,7 @@ from sklearn.metrics import roc_curve
 from utils.celeba import CelebA
 from utils.lfw import LFW
 from utils.ijb import IJB
+from utils.casia_web_face import CasiaWebFace
 from torch import nn
 import matplotlib.pyplot as plt
 
@@ -40,6 +41,7 @@ def get_options() -> Any:
     parser.add_argument("--result_dir", type=str, default="../../../results/show_model_acc_with_hist_LFW",
                         help="path to directory which includes results")
     parser.add_argument("--dataset", type=str, required=True, help="test dataset:[LFW, IJB-C, CASIA]")
+    parser.add_argument("--dataset_dir", type=str, required=True, help="path to the dataset directory")
 
 
     # System preferences
@@ -48,7 +50,7 @@ def get_options() -> Any:
     # Model Params
     parser.add_argument("--embedding_size", type=int, default=512,
                         help="embedding size of features of target model:[128, 512]")
-    parser.add_argument("--target_model", type=str, default="FaceNet", 
+    parser.add_argument("--target_model", type=str, required=True, 
                         help="target model: 'FaceNet', 'Arcface', 'Magface'")
     parser.add_argument("--target_model_path", type=str, help="path to pth of target model")
     parser.add_argument("--target_model_pretrained", action='store_false', help="path to pth of target model")
@@ -60,16 +62,19 @@ def get_options() -> Any:
 
     return opt
 
-def calculate_cossim_of_all_combinations(datas: torch.Tensor, criterion: torch.nn):
+def calculate_cossim_of_all_combinations(datas: torch.Tensor, criterion: torch.nn, filenames: List) -> Tuple[torch.Tensor, List]:
     size = datas.size(dim=0)
     idxes = torch.combinations(torch.tensor(list(range(size))))
 
+    filenames_return = []
     cossims = torch.Tensor()
     for idx1, idx2 in idxes:
         cossim = criterion(datas[idx1], datas[idx2]).unsqueeze(0).cpu()
+        filename = filenames[idx1] + '_' + filenames[idx2]
         cossims = torch.concat((cossims, cossim))
+        filenames_return.append(filename)
 
-    return cossims
+    return cossims, filenames_return
 
 def normalize_hist(x, p):
     max = 0
@@ -129,15 +134,14 @@ def main():
     model.to(device)
 
 
+    opencv = False
     if options.target_model == 'Magface':
         opencv = True
-    else:
-        opencv = False
 
     # Load datasets
     if options.dataset == 'LFW':
         dataset = LFW(
-            base_dir='../../../dataset/LFWA/lfw-deepfunneled-MTCNN160',
+            base_dir=options.dataset_dir,
             transform=transforms.Compose([
                 transforms.Resize((img_size, img_size)),
                 transforms.ToTensor(),
@@ -147,7 +151,7 @@ def main():
         )
     elif options.dataset == 'IJB-C':
         dataset = IJB(
-            base_dir='../../../dataset/IJB-C_cropped/screened/img',
+            base_dir=options.dataset_dir,
             transform=transforms.Compose([
                 transforms.Resize((img_size, img_size)),
                 transforms.ToTensor(),
@@ -155,13 +159,16 @@ def main():
             opencv=opencv
         )
     elif options.dataset == 'CASIA':
-        dataset = IJB(
-            base_dir='../../../dataset/CASIAWebFace_MTCNN160',
+        dataset = CasiaWebFace(
+            base_dir=options.dataset_dir,
             transform=transforms.Compose([
                 transforms.Resize((img_size, img_size)),
                 transforms.ToTensor(),
             ]),
-            opencv=opencv
+            num_of_identities=5120,
+            num_per_identity=20,
+            usage='train',
+            # opencv=opencv
         )
     else:
         raise('dataset is invalid')
@@ -178,27 +185,33 @@ def main():
     criterion = nn.CosineSimilarity(dim=0)
 
     # Calculate cossim of all combination of datas of same person
+    # Filename: for debug
     current_id = None
+    same_filenames = []
     same_datas= torch.Tensor()
     same_cossims = torch.Tensor()
-    count = 0
-    transform = transforms.ToPILImage()
-    for i, (data, (id, _)) in enumerate(tqdm(dataset)):
+    for i, (data, (id, filename)) in enumerate(tqdm(dataset)):
         data = data.unsqueeze(0).to(device)
         if current_id is None or current_id != id:
             if same_datas.size(dim=0) != 0:
-                # print(same_datas.shape)
                 same_features = model(same_datas)
-                cossims = calculate_cossim_of_all_combinations(same_features, criterion)
+                cossims, filenames = calculate_cossim_of_all_combinations(same_features, criterion, same_filenames)
                 same_cossims = torch.concat((same_cossims, cossims))
+                # for cossim, filename in zip(cossims, filenames):
+                #     if cossim < 0.1:
+                #         print(cossim)
+                #         print(filename)
             same_datas = data
+            same_filenames = [filename]
             current_id = id
         elif current_id == id:
             same_datas= torch.concat((same_datas, data))
+            same_filenames.append(filename)
 
     print(same_cossims.size())
         
     # Sample datas of different person rondamly and calculate
+    # if the length of set_id equals that of id, the identities in batch_data do not overlap.
     dif_cossims = torch.Tensor()
     done = False
     while not done:
