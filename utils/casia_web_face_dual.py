@@ -10,10 +10,11 @@ import numpy as np
 
 from util import resolve_path, remove_path_prefix
 
-class CasiaWebFace(torch.utils.data.Dataset):
+class CasiaWebFaceDual(torch.utils.data.Dataset):
     def __init__(
         self,
-        base_dir: str,
+        base_dir1: str,
+        base_dir2: str,
         num_of_identities: int,
         num_per_identity: int,
         usage: str,
@@ -25,11 +26,13 @@ class CasiaWebFace(torch.utils.data.Dataset):
         if not usage in ['train', 'test', 'valid', 'eval']:
             raise('Casia Web Face usage error')
 
-        self.base_dir = base_dir
+        self.base_dir1= base_dir1
+        self.base_dir2= base_dir2 
         self.transform = transform
 
         # Initialize variables
-        folder_list = glob(resolve_path(base_dir, '*'))
+        folder_paths1 = glob(resolve_path(base_dir1, '*'))
+        folder_paths2 = glob(resolve_path(base_dir2, '*'))
         self.filenames = []
         self.labels = []
         self.test_filenames = []
@@ -37,33 +40,43 @@ class CasiaWebFace(torch.utils.data.Dataset):
         self.eval_filenames = []
         self.eval_labels = []
         loaded_identities_counter = 0
-        
+
+
+        folder_paths1, folder_paths2 = self.remove_unique_folder(folder_paths1, folder_paths2)
+        folder_paths2, folder_paths1 = self.remove_unique_folder(folder_paths2, folder_paths1)
+
         # Get a list of images which satisfies the restraint of image number
         # Filenames and Labels are training data
         # Test_filenames and test_labels are validating and testing data
-        for folder in folder_list:
-            file_list = glob(resolve_path(folder, '*'))
-            label = remove_path_prefix(folder)
-            if len(file_list) >= num_per_identity:
+        for folder_path1 in folder_paths1:
+            # The same identity folder should be in both lists
+            file_paths1 = glob(resolve_path(folder_path1, '*'))
+            label = remove_path_prefix(folder_path1)
+            file_paths2 = glob(resolve_path(base_dir2, label, '*'))
+
+            file_paths1, file_paths2 = self.remove_unique_file(file_paths1, file_paths2, label)
+            file_paths2, file_paths1 = self.remove_unique_file(file_paths2, file_paths1, label)
+
+            if len(file_paths1) >= num_per_identity:
                 if num_of_identities > loaded_identities_counter:
-                    self.filenames.extend(file_list[:num_per_identity])
+                    self.filenames.extend(file_paths1[:num_per_identity])
                     self.labels.extend([label] * num_per_identity)
                     loaded_identities_counter += 1
                 else:
-                    self.test_filenames.extend(file_list[:num_per_identity])
-                    # self.test_labels.extend([label] * len(file_list))
+                    self.test_filenames.extend(file_paths1[:num_per_identity])
+                    # self.test_labels.extend([label] * len(files))
                     self.test_labels.extend([label] * num_per_identity)
 
         # Get a list of images for evaluation which doesn't overlap with training, validating, testing dataset
         if usage == 'eval':
             loaded_identities_counter = 0
-            for folder in folder_list:
-                file_list = glob(resolve_path(folder, '*'))
-                label = remove_path_prefix(folder)
+            for folder_path1 in folder_paths1:
+                file_paths1 = glob(resolve_path(folder_path1, '*'))
+                label = remove_path_prefix(folder_path1)
                 if label in self.labels:
                     continue
-                if len(file_list) >= eval_num_per_identity and eval_num_of_identities > loaded_identities_counter:  
-                    self.eval_filenames.extend(file_list[:eval_num_per_identity])
+                if len(file_paths1) >= eval_num_per_identity and eval_num_of_identities > loaded_identities_counter:  
+                    self.eval_filenames.extend(file_paths1[:eval_num_per_identity])
                     self.eval_labels.extend([label] * eval_num_per_identity)
                     loaded_identities_counter += 1
 
@@ -99,29 +112,53 @@ class CasiaWebFace(torch.utils.data.Dataset):
         elif usage == 'eval':
             assert len(self.filenames)  == eval_num_of_identities * eval_num_per_identity
 
+    def remove_unique_folder(self, folder_paths1, folder_paths2):
+        for folder_path1 in folder_paths1:
+            label = remove_path_prefix(folder_path1)
+            folder_path2 = resolve_path(self.base_dir2, label)
+            if not folder_path2 in folder_paths2:
+                folder_paths1.remove(folder_path1)
+        return folder_paths1, folder_paths2
+
+    def remove_unique_file(self, file_paths1, file_paths2, label):
+        file_paths = file_paths1.copy()
+        for i, file_path1 in enumerate(file_paths):
+            id = remove_path_prefix(file_path1)
+            file_path2 = resolve_path(self.base_dir2, label, id)
+            if not file_path2 in file_paths2:
+                file_paths1.remove(file_path1)
+        return file_paths1, file_paths2
+
     def __len__(self) -> int:
         return len(self.filenames)
 
     def __getitem__(self, index: int) -> Tuple[Any, Any]:
-        file_path = resolve_path(self.base_dir, self.labels[index], self.filenames[index])
-        data = PIL.Image.open(file_path)
+        file_path1 = resolve_path(self.base_dir1, self.labels[index], self.filenames[index])
+        file_path2 = resolve_path(self.base_dir2, self.labels[index], self.filenames[index])
+        data1 = PIL.Image.open(file_path1)
+        data2 = PIL.Image.open(file_path2)
         filename = self.filenames[index]
         label = self.labels[index]
 
         if self.transform is not None:
-            data = self.transform(data)
+            data1 = self.transform(data1)
+            data2 = self.transform(data2)
 
-        return data, (label, filename)
+        return (data1, data2), (label, filename)
 
 
 def main():
-    dataset = CasiaWebFace(base_dir='../../dataset/CASIAWebFace_MTCNN160',
-                           usage='eval',
-                           num_of_identities=100,
-                           num_per_identity=10,
+    dataset = CasiaWebFaceDual(base_dir1='../../dataset/CASIAWebFace_MTCNN160_Facenet',
+                           base_dir2='../../dataset/CASIAWebFace_MTCNN112_Arcface_without_screening',
+                           usage='train',
+                           num_of_identities=5200,
+                           num_per_identity=20,
                            eval_num_of_identities=300,
                            eval_num_per_identity=2,)
-    print(dataset[0])
+
+    print(dataset.base_dir1)
+    print(dataset.base_dir2)
+
 
 if __name__ == '__main__':
 	main()

@@ -232,37 +232,36 @@ def main():
             break # 1 image for 1 identity for TypeA evaluation
 
     # TypeB
-    for identity_path in glob.glob(resolve_path(step2_dir, '*')):
-        if not os.path.isdir(identity_path):
-            continue
-        folder_name = remove_path_prefix(identity_path)
-        # best_images folder is only for inception score
-        if folder_name == 'best_images':
-            continue
-        filename_path_list = glob.glob(resolve_path(identity_path, '*'))
+    # for identity_path in glob.glob(resolve_path(step2_dir, '*')):
+    #     if not os.path.isdir(identity_path):
+    #         continue
+    #     folder_name = remove_path_prefix(identity_path)
+    #     # best_images folder is only for inception score
+    #     if folder_name == 'best_images':
+    #         continue
+    #     filename_path_list = glob.glob(resolve_path(identity_path, '*'))
 
-        reconstructed_file_path = filename_path_list[0]
-        reconstrected_best_image_path = glob.glob(resolve_path(reconstructed_file_path, 'best_image', '*'))[0]
-        reconstructed_image = PIL.Image.open(reconstrected_best_image_path)
-        reconstructed_feature = T(transform_T(reconstructed_image).to(device).unsqueeze(0)).unsqueeze(0)
+    #     reconstructed_file_path = filename_path_list[0]
+    #     reconstrected_best_image_path = glob.glob(resolve_path(reconstructed_file_path, 'best_image', '*'))[0]
+    #     reconstructed_image = PIL.Image.open(reconstrected_best_image_path)
+    #     reconstructed_feature = T(transform_T(reconstructed_image).to(device).unsqueeze(0)).unsqueeze(0)
 
-        target_file_path = filename_path_list[1]
-        target_filename = remove_path_prefix(target_file_path)
-        target_image_path = resolve_path(dataset_dir, folder_name, target_filename)
-        target_image = PIL.Image.open(target_image_path)
-        target_feature = T(transform_T(target_image).to(device).unsqueeze(0)).unsqueeze(0)
-        cossims_TypeB = np.append(cossims_TypeB, criterion(target_feature.cpu(), reconstructed_feature.cpu()))
+    #     target_file_path = filename_path_list[1]
+    #     target_filename = remove_path_prefix(target_file_path)
+    #     target_image_path = resolve_path(dataset_dir, folder_name, target_filename)
+    #     target_image = PIL.Image.open(target_image_path)
+    #     target_feature = T(transform_T(target_image).to(device).unsqueeze(0)).unsqueeze(0)
+    #     cossims_TypeB = np.append(cossims_TypeB, criterion(target_feature.cpu(), reconstructed_feature.cpu()))
 
     threshold = show_graph(result_dir=result_dir, step1_options=step1_options, cossims=cossims_TypeA)
     logger.info(f'TypeA')
     logger.info(f'The average of cosine similarity: {cossims_TypeA.mean()}')
     logger.info(f'TAR: {(cossims_TypeA > threshold).sum()/len(cossims_TypeA)}')
 
-    threshold = show_graph(result_dir=result_dir, step1_options=step1_options, cossims=cossims_TypeB)
-
-    logger.info(f'TypeB')
-    logger.info(f'The average of cosine similarity: {cossims_TypeB.mean()}')
-    logger.info(f'TAR: {(cossims_TypeB > threshold).sum()/len(cossims_TypeB)}')
+    # threshold = show_graph(result_dir=result_dir, step1_options=step1_options, cossims=cossims_TypeB)
+    # logger.info(f'TypeB')
+    # logger.info(f'The average of cosine similarity: {cossims_TypeB.mean()}')
+    # logger.info(f'TAR: {(cossims_TypeB > threshold).sum()/len(cossims_TypeB)}')
 
 if __name__ == '__main__':
 	main()

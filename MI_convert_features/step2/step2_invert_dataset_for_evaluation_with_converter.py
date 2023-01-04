@@ -21,7 +21,9 @@ from utils.lfw import LFW
 from utils.ijb import IJB
 from utils.casia_web_face import CasiaWebFace
 from utils.util import (resolve_path, save_json, create_logger, get_img_size,load_attacker_discriminator, load_attacker_generator, 
-                        load_autoencoder, load_json, load_model_as_feature_extractor, RandomBatchLoader, get_img_size, get_freer_gpu)
+                        load_autoencoder, load_json, load_model_as_feature_extractor, RandomBatchLoader, get_img_size, get_freer_gpu, align_face_image)
+
+from utils.arcface_face_cropper.mtcnn import MTCNN
 
 from easydict import EasyDict as edict
 
@@ -35,7 +37,8 @@ def get_options() -> Any:
     parser.add_argument("--multi_gpu", action='store_true', help="flag of multi gpu")
     
     # Dir
-    parser.add_argument("--dataset", type=str, default='CASIA', help='test dataset:[LFWA, IJB-C, CASIA]')
+    parser.add_argument("--dataset", type=str, required=True, help='test dataset:[LFWA, IJB-C, CASIA]')
+    parser.add_argument("--dataset_dir", type=str, required=True, help='test dataset:[LFWA, IJB-C, CASIA]')
     parser.add_argument("--result_dir", type=str, default="../../../results/dataset_reconstructed", help="path to directory which includes results")
     parser.add_argument("--step1_dir", type=str, required=True, help="path to directory which includes the step1 result")
     parser.add_argument("--GAN_dir", type=str, default="../../../results/common/step2/pure_facenet_500epoch_features", help="path to directory which includes the step1 result")
@@ -63,10 +66,14 @@ def L_prior(D: nn.Module, G: nn.Module, z: torch.Tensor) -> torch.Tensor:
     return torch.mean(-D(G(z)))
 
 
-def calc_id_loss(G: nn.Module, FE: nn.Module, z: torch.Tensor, device: str, all_target_features: torch.Tensor, image_size: int) -> torch.Tensor:
-    resize = transforms.Resize((image_size, image_size))
+def calc_id_loss(G: nn.Module, FE: nn.Module, detector, z: torch.Tensor, device: str, all_target_features: torch.Tensor, image_size: int) -> torch.Tensor:
+    global options
+    # resize = transforms.Resize((image_size, image_size))
     metric = nn.CosineSimilarity(dim=1)
-    Gz_features = FE(resize(G(z))).to(device)
+    imgs = G(z).to(device)
+    # TODO: FIX
+    imgs = align_face_image(imgs, options.dataset, 'Arcface', detector).to(device)
+    Gz_features = FE(imgs).to(device)
     dim = Gz_features.shape[1]
 
     sum_of_cosine_similarity = 0
@@ -76,10 +83,14 @@ def calc_id_loss(G: nn.Module, FE: nn.Module, z: torch.Tensor, device: str, all_
     return 1 - torch.mean(sum_of_cosine_similarity / all_target_features.shape[0])
 
 
-def get_best_image(FE: nn.Module, images: nn.Module, image_size: int, all_target_features: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-    resize = transforms.Resize((image_size, image_size))
+def get_best_image(FE: nn.Module, imgs: nn.Module, detector, image_size: int, all_target_features: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    # resize = transforms.Resize((image_size, image_size))
     metric = nn.CosineSimilarity(dim=1)
-    FEz_features = FE(resize(images))
+    # TODO: FIX
+    imgs = align_face_image(imgs, options.dataset, 'Arcface', detector).to(device)
+    if (imgs.size()[0]) == 0:
+        return None
+    FEz_features = FE(imgs)
     dim = FEz_features.shape[1]
     sum_of_cosine_similarity = 0
     for target_feature in all_target_features.view(-1, dim):
@@ -87,8 +98,7 @@ def get_best_image(FE: nn.Module, images: nn.Module, image_size: int, all_target
         sum_of_cosine_similarity += metric(FEz_features, target_feature)
     sum_of_cosine_similarity /= all_target_features.shape[0]
     bestImageIndex = sum_of_cosine_similarity.argmax()
-    return images[bestImageIndex], sum_of_cosine_similarity[bestImageIndex]
-
+    return imgs[bestImageIndex], sum_of_cosine_similarity[bestImageIndex]
 
 def set_global():
     global options
@@ -107,7 +117,7 @@ def main():
 
     step1_dir = options.step1_dir[options.step1_dir.rfind('/'):][18:]
     result_dir = resolve_path(options.result_dir, (options.identifier + '_' + step1_dir))
-    os.makedirs(result_dir, exist_ok=False)
+    os.makedirs(result_dir, exist_ok=True)
     
     # Create logger
     logger = create_logger(f"Step 2", resolve_path(result_dir, "inference.log"))
@@ -162,6 +172,7 @@ def main():
         mode='eval',
         ver=step1_options.AE_ver
     ).to(device)
+    detector = MTCNN(device)
 
     if isinstance(D, nn.Module):
         D.to(device) 
@@ -191,20 +202,21 @@ def main():
     ])
 
     if options.dataset == 'LFW':
-        dataset = LFW( base_dir='../../../dataset/LFWA/lfw-deepfunneled-MTCNN160',
+        dataset = LFW( base_dir=options.dataset_dir,
             transform=transforms.Compose([
                 transforms.ToTensor(),
             ]),
         )
     elif options.dataset == 'IJB-C':
         dataset = IJB(
-            base_dir='../../../dataset/IJB-C_cropped/screened/img',
+            base_dir=options.dataset_dir,
             transform=transforms.Compose([
                 transforms.ToTensor(),
             ]),
         )
     elif options.dataset == 'CASIA':
-        dataset = CasiaWebFace(base_dir='../../../dataset/CASIAWebFace_MTCNN160',
+        dataset = CasiaWebFace(
+                            base_dir=options.dataset_dir,
                             usage='eval',
                             num_of_identities=7000,
                             num_per_identity=20,
@@ -281,7 +293,7 @@ def main():
                 optimizer.zero_grad()
 
                 L_prior_loss = L_prior(D, G, batch)
-                L_id_loss = calc_id_loss(G, A, batch, device, target_feature, img_size_A) 
+                L_id_loss = calc_id_loss(G, A, detector, batch, device, target_feature, img_size_A) 
                 
                 L_id_loss = options.lambda_i * L_id_loss
                 total_loss = L_prior_loss + L_id_loss
@@ -322,10 +334,11 @@ def main():
             batch = batch.unsqueeze(0)
             images = G(batch).detach()
 
-            best_image, best_cossim = get_best_image(A, images, img_size_A, target_feature)
-
-            best_images_path = resolve_path(result_filename_dir, f"best_images_{best_cossim}.png")
-            save_image(best_image, best_images_path, normalize=True, nrow=iteration)
+            result  = get_best_image(A, images, detector, img_size_A, target_feature)
+            if result is not None:
+                best_image, best_cossim = result
+                best_images_path = resolve_path(result_filename_dir, f"best_images_{best_cossim}.png")
+                save_image(best_image, best_images_path, normalize=True, nrow=iteration)
 
         logger.info(f"[Saved all best images: {result_filename_dir}]")
 

@@ -28,8 +28,6 @@ from my_models.AutoEncoder import AutoEncoder
 from my_models.Discriminator3 import Discriminator3
 from my_models.Generator3 import Generator3
 
-
-
 def save_json(path: str, obj: Any):
     with open(path, "w") as json_file:
         json.dump(obj, json_file, indent=4)
@@ -344,6 +342,25 @@ def get_freer_gpu():
             return i
     
     return -1
+
+def align_face_image(imgs, dataset, model, detector):
+    toPIL = transforms.ToPILImage()
+    toTensor = transforms.ToTensor()
+    if not model in ['FaceNet', 'Arcface', 'Magface']:
+        raise('Model error in align face image')
+    # TODO: How to align for FaceNet(just image size?)
+    # if model == 'FaceNet':
+    if model == 'Arcface' or 'Magface':
+        res = torch.Tensor()
+        for img in imgs:
+            img = toPIL(img)
+            img = detector.align(img, dataset)
+            if img is not None:
+                img = toTensor(img)
+                res = torch.cat((res, img.unsqueeze(0)))
+    return res
+
+
 
 class RandomBatchLoader:
     def __init__(self, x: torch.Tensor, batch_size: int):

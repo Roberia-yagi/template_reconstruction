@@ -26,7 +26,9 @@ class MTCNN():
         self.refrence = get_reference_facial_points(default_square= True)
         os.chdir(orig_folder)
         
-    def align(self, img):
+    def align(self, img, dataset):
+        if not dataset in ['CASIA', 'LFW']:
+            raise('Model is not valid in mtcnn')
         boxes, landmarks = self.detect_faces(img)
         # print(f'Number of faces: {len(boxes)}')
         # for i, (box, landmark) in enumerate(zip(boxes, landmarks)):
@@ -34,16 +36,15 @@ class MTCNN():
         #     print(f'{i}th box is {box}')
         if len(landmarks) == 0:
             return None
-        i = self.center_face(boxes, img.size)
+        i = self.center_face(boxes, img.size, dataset)
         if i is None:
             return None
         facial5points = [[landmarks[i][j],landmarks[i][j+5]] for j in range(5)]
         warped_face = warp_and_crop_face(np.array(img), facial5points, self.refrence, crop_size=(112,112))
         return Image.fromarray(warped_face)
 
-    def center_face(self, boxes, size):
+    def center_face(self, boxes, size, dataset):
         min_i = -1
-        max_box_size = -1
         min_box_center = 1e9
         width, height = size
         for i, box in enumerate(boxes):
@@ -61,8 +62,9 @@ class MTCNN():
             # print(f'y distance from center is {box_size_y}')
             box_size = box_size_x + box_size_y
             
-            if box_size > 50:
-                continue 
+            if dataset == 'LFW':
+                if box_size > 50:
+                    continue 
 
             if box_size < min_box_center:
                 min_box_center = box_size

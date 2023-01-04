@@ -6,7 +6,7 @@ import glob
 import PIL
 from typing import Any, Callable, Optional, Tuple
 
-from util import resolve_path
+from util import resolve_path, remove_path_prefix
 
 class LFW(torch.utils.data.Dataset):
     def __init__(
@@ -16,26 +16,25 @@ class LFW(torch.utils.data.Dataset):
         opencv: bool = False
     ) -> None:
         self.base_dir = base_dir
-        a = base_dir + '/*'
-        self.folder_paths= sorted(glob.glob(base_dir + '/*'))
-        self.file_paths = []
+        self.folder_paths = sorted(glob.glob(resolve_path(base_dir, '*')))
+        self.file_names = []
         self.labels = []
         self.transform = transform
         self.opencv = opencv
 
         for i, folder_path in enumerate(self.folder_paths):
-            for file_path in sorted(glob.glob(folder_path + '/*')):
-                self.labels.append(folder_path[folder_path.rfind('/')+1:])
-                self.file_paths.append(file_path[file_path.rfind('/')+1:])
+            for file_path in sorted(glob.glob(resolve_path(folder_path, '*'))):
+                self.labels.append(remove_path_prefix(folder_path))
+                self.file_names.append(remove_path_prefix(file_path))
             
     def __len__(self) -> int:
-        return len(self.file_paths)
+        return len(self.file_names)
 
     def __getitem__(self, index: int) -> Tuple[Any, Any]:
         data = PIL.Image.open(resolve_path(self.base_dir,
-            self.file_paths[index][:self.file_paths[index].rfind('_')], self.file_paths[index]))
+            self.file_names[index][:self.file_names[index].rfind('_')], self.file_names[index]))
         label = self.labels[index]
-        filename = self.file_paths[index]
+        filename = self.file_names[index]
 
         if self.transform is not None:
             data = self.transform(data)

@@ -17,6 +17,7 @@ from retinaface.pre_trained_models import get_model
 
 import numpy as np
 
+
 from PIL import ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
