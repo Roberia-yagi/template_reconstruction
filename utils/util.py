@@ -239,8 +239,8 @@ def get_img_size(model: str) -> int:
     
     return img_size
 
-def load_attacker_discriminator(path: str, input_dim: int, network_dim: int, img_shape: Tuple[int, int, int], device) -> nn.Module:
-    D = Discriminator3(input_dim=input_dim, network_dim=network_dim, img_shape=img_shape)
+def load_attacker_discriminator(path: str, input_dim: int, network_dim: int, device) -> nn.Module:
+    D = Discriminator3(input_dim=input_dim, network_dim=network_dim)
     D.load_state_dict(torch.load(path, device))
 
     for param in D.parameters():
@@ -250,8 +250,8 @@ def load_attacker_discriminator(path: str, input_dim: int, network_dim: int, img
 
     return D
 
-def load_attacker_generator(path: str, latent_dim: int, network_dim:int, img_shape: Tuple[int, int, int], device) -> nn.Module:
-    G = Generator3(latent_dim=latent_dim, network_dim=network_dim ,img_shape=img_shape)
+def load_attacker_generator(path: str, latent_dim: int, network_dim:int, device) -> nn.Module:
+    G = Generator3(latent_dim=latent_dim, network_dim=network_dim)
     G.load_state_dict(torch.load(path, device))
 
     for param in G.parameters():
@@ -331,8 +331,6 @@ def get_freer_gpu():
         device = f'cuda:{i}'
         tmp = torch.tensor([1000]).to(device)
         memory_available_after = get_memory_usage()
-        # print(memory_available_before)
-        # print(memory_available_after)
         if max(memory_available_before - memory_available_after) == 0:
             continue
         gpu_idx = np.argmax(memory_available_before - memory_available_after)
@@ -348,19 +346,23 @@ def align_face_image(imgs, dataset, model, detector):
     toTensor = transforms.ToTensor()
     if not model in ['FaceNet', 'Arcface', 'Magface']:
         raise('Model error in align face image')
-    # TODO: How to align for FaceNet(just image size?)
-    # if model == 'FaceNet':
-    if model == 'Arcface' or 'Magface':
+    if model == 'FaceNet':
+        res = imgs
+    elif model == 'Arcface' or 'Magface':
         res = torch.Tensor()
         for img in imgs:
             img = toPIL(img)
-            img = detector.align(img, dataset)
-            if img is not None:
-                img = toTensor(img)
-                res = torch.cat((res, img.unsqueeze(0)))
+            aligned_img = detector.align(img, dataset)
+            if dataset == 'GAN':
+                if aligned_img is None:
+                    aligned_img = img
+                aligned_img = toTensor(aligned_img)
+                res = torch.cat((res, aligned_img.unsqueeze(0)))
+            else:
+                if aligned_img is not None:
+                    aligned_img = toTensor(aligned_img)
+                    res = torch.cat((res, aligned_img.unsqueeze(0)))
     return res
-
-
 
 class RandomBatchLoader:
     def __init__(self, x: torch.Tensor, batch_size: int):
@@ -387,3 +389,17 @@ class RandomBatchLoader:
         mask = self.idx[start:end]
 
         return self.x[mask]
+
+def set_global(get_options):
+    options = get_options()
+
+    # Decide device
+    if options.gpu_idx is None:
+        gpu_idx = get_freer_gpu()
+    else:
+        gpu_idx = options.gpu_idx
+    device = f"cuda:{gpu_idx}" if torch.cuda.is_available() else "cpu"
+
+    options.device = device
+
+    return device, options

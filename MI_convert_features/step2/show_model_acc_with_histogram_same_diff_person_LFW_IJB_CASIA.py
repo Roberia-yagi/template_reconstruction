@@ -16,20 +16,16 @@ from typing import Any, List, Tuple
 
 import torch
 import torchvision.transforms as transforms
-from torchvision import datasets
 from torch.utils.data import DataLoader
 from sklearn.metrics import roc_curve
-from utils.celeba import CelebA
 from utils.lfw import LFW
 from utils.ijb import IJB
 from utils.casia_web_face import CasiaWebFace
 from torch import nn
 import matplotlib.pyplot as plt
 
-from sklearn.model_selection import train_test_split
-
 from utils.util import (save_json,  create_logger, resolve_path, load_model_as_feature_extractor, 
-load_model_as_feature_extractor, get_freer_gpu, get_img_size, get_output_shape)
+load_model_as_feature_extractor, get_freer_gpu, get_img_size, get_output_shape, set_global)
 
 def get_options() -> Any:
     parser = argparse.ArgumentParser()
@@ -86,27 +82,15 @@ def normalize_hist(x, p):
     return max
 
 
-def set_global():
-    global options
-    global device
-
-    options = get_options()
-    # Decide device
-    # device = f"cuda:{options.gpu_idx}" if torch.cuda.is_available() else "cpu"
-
-    gpu_id = get_freer_gpu()
-    device = f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu"
-
-    options.device = device
-
-
 # def fixed_image_standardization(image_tensor):
 #     processed_tensor = (image_tensor - 127.5) / 128.0
 #     return processed_tensor
 
 
 def main():
-    set_global()
+    global options
+    global device
+    device, options = set_global(get_options)
 
     # Create directory to save results
     result_dir = resolve_path(options.result_dir, options.identifier)
@@ -143,7 +127,6 @@ def main():
         dataset = LFW(
             base_dir=options.dataset_dir,
             transform=transforms.Compose([
-                transforms.Resize((img_size, img_size)),
                 transforms.ToTensor(),
                 # fixed_image_standardization
             ]),
@@ -153,7 +136,6 @@ def main():
         dataset = IJB(
             base_dir=options.dataset_dir,
             transform=transforms.Compose([
-                transforms.Resize((img_size, img_size)),
                 transforms.ToTensor(),
             ]),
             opencv=opencv
@@ -162,7 +144,6 @@ def main():
         dataset = CasiaWebFace(
             base_dir=options.dataset_dir,
             transform=transforms.Compose([
-                transforms.Resize((img_size, img_size)),
                 transforms.ToTensor(),
             ]),
             num_of_identities=5120,

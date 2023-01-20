@@ -6,10 +6,9 @@ from typing import Tuple, List
 
 # adapted from The Secret Revealer
 class Generator3(nn.Module):
-    def __init__(self, latent_dim: int, network_dim:int, img_shape: Tuple[int, int, int]):
+    def __init__(self, latent_dim: int, network_dim:int):
         super().__init__()
 	
-        self.img_shape = img_shape
         self.latent_dim = latent_dim
         self.network_dim = network_dim
 
@@ -58,8 +57,7 @@ if __name__ == '__main__':
     batch_size = 64
     latent_dim = 100 # z (in_dim in original paper)
     network_dim = 64
-    img_shape=(3, 64, 64) # output_shape (out_dim in original paper)
-    g = Generator3(latent_dim=latent_dim, network_dim=network_dim, img_shape=img_shape)
+    g = Generator3(latent_dim=latent_dim, network_dim=network_dim)
     z = torch.randn(batch_size, latent_dim)
     print(z.shape)
 

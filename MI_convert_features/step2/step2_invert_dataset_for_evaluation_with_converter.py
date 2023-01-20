@@ -21,7 +21,7 @@ from utils.lfw import LFW
 from utils.ijb import IJB
 from utils.casia_web_face import CasiaWebFace
 from utils.util import (resolve_path, save_json, create_logger, get_img_size,load_attacker_discriminator, load_attacker_generator, 
-                        load_autoencoder, load_json, load_model_as_feature_extractor, RandomBatchLoader, get_img_size, get_freer_gpu, align_face_image)
+                        load_autoencoder, load_json, load_model_as_feature_extractor, RandomBatchLoader, get_img_size, get_freer_gpu, align_face_image, set_global)
 
 from utils.arcface_face_cropper.mtcnn import MTCNN
 
@@ -33,7 +33,7 @@ def get_options() -> Any:
     # Timestamp
     time_stamp = datetime.datetime.now().strftime("%Y_%m_%d_%H_%M")
     parser.add_argument("--identifier", type=str, default=time_stamp, help="timestamp")
-    parser.add_argument("--gpu_idx", type=int, default=1, help="index of cuda devices")
+    parser.add_argument("--gpu_idx", type=int, default=None, help="index of cuda devices")
     parser.add_argument("--multi_gpu", action='store_true', help="flag of multi gpu")
     
     # Dir
@@ -66,14 +66,20 @@ def L_prior(D: nn.Module, G: nn.Module, z: torch.Tensor) -> torch.Tensor:
     return torch.mean(-D(G(z)))
 
 
-def calc_id_loss(G: nn.Module, FE: nn.Module, detector, z: torch.Tensor, device: str, all_target_features: torch.Tensor, image_size: int) -> torch.Tensor:
+def calc_id_loss(G: nn.Module, FE: nn.Module, detector, z: torch.Tensor, device: str, model_name: str, all_target_features: torch.Tensor, image_size: int) -> torch.Tensor:
     global options
-    # resize = transforms.Resize((image_size, image_size))
     metric = nn.CosineSimilarity(dim=1)
-    imgs = G(z).to(device)
-    # TODO: FIX
-    imgs = align_face_image(imgs, options.dataset, 'Arcface', detector).to(device)
-    Gz_features = FE(imgs).to(device)
+    orig_imgs = G(z).to(device)
+
+    # Works well
+    transform = transforms.Resize((image_size, image_size))
+    Gz_features = FE(transform(orig_imgs)).to(device)
+
+    # Bug remains
+    # transform = transforms.Resize((image_size, image_size))
+    # imgs = align_face_image(transform(orig_imgs), 'GAN', model_name, detector).to(device)
+    # Gz_features = FE(imgs).to(device)
+
     dim = Gz_features.shape[1]
 
     sum_of_cosine_similarity = 0
@@ -83,14 +89,20 @@ def calc_id_loss(G: nn.Module, FE: nn.Module, detector, z: torch.Tensor, device:
     return 1 - torch.mean(sum_of_cosine_similarity / all_target_features.shape[0])
 
 
-def get_best_image(FE: nn.Module, imgs: nn.Module, detector, image_size: int, all_target_features: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-    # resize = transforms.Resize((image_size, image_size))
+def get_best_image(FE: nn.Module, orig_imgs: nn.Module, detector, model_name: str, all_target_features: torch.Tensor, image_size: int) -> Tuple[torch.Tensor, torch.Tensor]:
     metric = nn.CosineSimilarity(dim=1)
-    # TODO: FIX
-    imgs = align_face_image(imgs, options.dataset, 'Arcface', detector).to(device)
-    if (imgs.size()[0]) == 0:
-        return None
-    FEz_features = FE(imgs)
+
+    # Works well
+    resize = transforms.Resize((image_size, image_size))
+    FEz_features = FE(resize(orig_imgs))
+
+    # Bug remains
+    # resize = transforms.Resize((image_size, image_size))
+    # imgs = align_face_image(resize(orig_imgs), 'GAN', model_name, detector).to(device)
+    # if (imgs.size()[0]) == 0:
+    #     return None
+    # FEz_features = FE(imgs)
+
     dim = FEz_features.shape[1]
     sum_of_cosine_similarity = 0
     for target_feature in all_target_features.view(-1, dim):
@@ -98,21 +110,13 @@ def get_best_image(FE: nn.Module, imgs: nn.Module, detector, image_size: int, al
         sum_of_cosine_similarity += metric(FEz_features, target_feature)
     sum_of_cosine_similarity /= all_target_features.shape[0]
     bestImageIndex = sum_of_cosine_similarity.argmax()
-    return imgs[bestImageIndex], sum_of_cosine_similarity[bestImageIndex]
+    return orig_imgs[bestImageIndex], sum_of_cosine_similarity[bestImageIndex]
 
-def set_global():
-    global options
-    global device
-    options = get_options()
-
-    gpu_idx = get_freer_gpu()
-    device = f"cuda:{gpu_idx}" if torch.cuda.is_available() else "cpu"
-    # device = f"cuda:{options.gpu_idx}" if torch.cuda.is_available() else "cpu"
-
-    options.device = device
 
 def main():
-    set_global()
+    global options
+    global device
+    device, options = set_global(get_options)
     # Create directory to save results
 
     step1_dir = options.step1_dir[options.step1_dir.rfind('/'):][18:]
@@ -136,20 +140,17 @@ def main():
     # Load models
     img_size_T = get_img_size(step1_options.target_model)
     img_size_A = get_img_size(step1_options.attack_model)
-    img_shape_T = (options.img_channels, img_size_T, img_size_T)
 
     D = load_attacker_discriminator(
         path=resolve_path(options.GAN_dir, "D.pth"),
         input_dim=GAN_options["img_channels"],
         network_dim=GAN_options["D_network_dim"],
-        img_shape=img_shape_T,
         device=device
     ).to(device)
     G = load_attacker_generator(
         path=resolve_path(options.GAN_dir, "G.pth"),
         latent_dim=GAN_options["latent_dim"],
         network_dim=GAN_options["G_network_dim"],
-        img_shape=img_shape_T,
         device=device
     ).to(device)
     T, _ = load_model_as_feature_extractor(
@@ -171,7 +172,7 @@ def main():
         pretrained=True,
         mode='eval',
         ver=step1_options.AE_ver
-    ).to(device)
+    )
     detector = MTCNN(device)
 
     if isinstance(D, nn.Module):
@@ -201,8 +202,10 @@ def main():
         transforms.Resize((img_size_T, img_size_T)),
     ])
 
+    # Load datasets
     if options.dataset == 'LFW':
-        dataset = LFW( base_dir=options.dataset_dir,
+        dataset = LFW(
+            base_dir=options.dataset_dir,
             transform=transforms.Compose([
                 transforms.ToTensor(),
             ]),
@@ -240,12 +243,18 @@ def main():
     )
 
     num_of_images = options.num_of_identities * options.num_per_identity
+
+    #########################
+    # Reconstruction Starts #
+    #########################
+
     for data, (labels, filenames) in dataloader:
         if reconstruction_count >= num_of_images:
             break
         data = data.to(device)
         target_feature = C(T(transform_T(data))).detach()
 
+        # Check if the identity of the data is unique
         if options.dataset == 'CASIA':
             reconstruction_count += 1
         else:
@@ -258,13 +267,15 @@ def main():
 
         if options.resume > reconstruction_count:
             continue
-            
+        
+        # The result directory should be as below.
         # result dir - label1 - image1
         #                     - image2
         #            - label2
         #                     - image3
         #                     - image4
 
+        # Create the result folder for identity
         for label, filename in zip(labels, filenames):
             result_label_dir = resolve_path(result_dir, label)
             result_filename_dir = resolve_path(result_label_dir, filename)
@@ -293,7 +304,7 @@ def main():
                 optimizer.zero_grad()
 
                 L_prior_loss = L_prior(D, G, batch)
-                L_id_loss = calc_id_loss(G, A, detector, batch, device, target_feature, img_size_A) 
+                L_id_loss = calc_id_loss(G, A, detector, batch, device, step1_options.attack_model, target_feature, img_size_A) 
                 
                 L_id_loss = options.lambda_i * L_id_loss
                 total_loss = L_prior_loss + L_id_loss
@@ -302,9 +313,12 @@ def main():
                 L_id_loss_avg += L_id_loss
                 total_loss_avg += total_loss
 
+                logger.info(f"[D Loss: {L_prior_loss}] [ID Loss: {L_id_loss}], [Total Loss: {total_loss}]")
+
                 total_loss.backward()
                 optimizer.step()
 
+                # Calculate loss average
                 L_prior_loss_avg /= z.shape[0]
                 L_id_loss_avg /= z.shape[0]
                 total_loss_avg /= z.shape[0]
@@ -334,7 +348,7 @@ def main():
             batch = batch.unsqueeze(0)
             images = G(batch).detach()
 
-            result  = get_best_image(A, images, detector, img_size_A, target_feature)
+            result  = get_best_image(A, images, detector, step1_options.attack_model, target_feature, img_size_A)
             if result is not None:
                 best_image, best_cossim = result
                 best_images_path = resolve_path(result_filename_dir, f"best_images_{best_cossim}.png")

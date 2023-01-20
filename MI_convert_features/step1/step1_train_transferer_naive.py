@@ -25,7 +25,7 @@ from torchvision import transforms
 from utils.casia_web_face_dual import CasiaWebFaceDual
 
 from utils.util import (save_json, create_logger, resolve_path, load_model_as_feature_extractor,
-    get_img_size, load_autoencoder, get_freer_gpu)
+    get_img_size, load_autoencoder, set_global)
 
 def get_options() -> Any:
     parser = argparse.ArgumentParser()
@@ -33,15 +33,15 @@ def get_options() -> Any:
     # Timestamp
     time_stamp = datetime.datetime.now().strftime("%Y_%m_%d_%H_%M")
     parser.add_argument("--identifier", type=str, default=time_stamp, help="timestamp")
-    parser.add_argument("--gpu_idx", type=int, default=1, help="index of cuda devices")
+    parser.add_argument("--gpu_idx", type=int, default=None, help="index of cuda devices")
 
     # Save
     parser.add_argument("--log_interval", type=int, default=100, help="interval between logs (per iteration)")
 
     # Directories
     parser.add_argument("--result_dir", type=str, default="../../../results/train_transferer_cossim", help="path to directory which includes results")
-    parser.add_argument("--attack_dataset_dir", type=str, required=True)
     parser.add_argument("--target_dataset_dir", type=str, required=True)
+    parser.add_argument("--attack_dataset_dir", type=str, required=True)
     parser.add_argument('--target_model_path', type=str, help='path to pretrained target model')
     parser.add_argument('--attack_model_path', type=str, help='path to pretrained attack model')
     parser.add_argument('--AE_path', type=str, help='path to pretrained AE')
@@ -82,8 +82,6 @@ def train_target(
     dataloader: DataLoader,
     T: nn.Module,
     A: nn.Module,
-    transform_T: transforms,
-    transform_A: transforms,
     AE: nn.Module,
     all_features_labels: tuple,
     criterion: nn.Module,
@@ -104,13 +102,14 @@ def train_target(
         optimizer.zero_grad()
 
         # Extract features 
-        target_features_T = T(transform_T(images_t))
+        target_features_T = T(images_t)
         
         # Convert features in the target model space to in the attack model space
         converted_target_features_in_A = AE(target_features_T)
-        target_features_in_A = A(transform_A(images_a))
+        target_features_in_A = A(images_a)
         loss_same = (1 - criterion(target_features_in_A, converted_target_features_in_A).mean()) / 2
         loss_diff = torch.tensor(0.0, dtype=float).to(device)
+        loss = loss_same / 2
 
         if options.negative_loss:
             for converted_target_feature_in_A, target_feature_A, target_label in zip(converted_target_features_in_A, target_features_in_A, labels):
@@ -129,7 +128,7 @@ def train_target(
                 loss_diff += torch.abs((converted_cossim - cossim) / 2).mean()
             loss_diff /= len(labels)
 
-        loss = (loss_same + options.gamma * loss_diff) / 2
+            loss = (loss_same + options.gamma * loss_diff) / 2
 
         # Log a loss history
         loss_history = np.append(loss_history, torch.clone(loss).detach().cpu().numpy())
@@ -156,8 +155,6 @@ def eval_target(
     dataloader: DataLoader,
     T: nn.Module,
     A: nn.Module,
-    transform_T: transforms,
-    transform_A: transforms,
     AE: nn.Module,
     all_features_labels: tuple,
     criterion: nn.Module,
@@ -174,11 +171,12 @@ def eval_target(
             images_t = images_t.to(device)
             images_a = images_a.to(device)
 
-            target_features_T = T(transform_T(images_t))
+            target_features_T = T(images_t)
             converted_target_features_in_A = AE(target_features_T)
-            target_features_A = A(transform_A(images_a))
+            target_features_A = A(images_a)
             loss_same = (1 - criterion(target_features_A, converted_target_features_in_A).mean()) / 2
             loss_diff = torch.tensor(0.0, dtype=float).to(device)
+            loss = loss_same
 
             if options.negative_loss:
                 for converted_target_feature_in_A, target_feature_A, target_label in zip(converted_target_features_in_A, target_features_A, labels):
@@ -197,7 +195,7 @@ def eval_target(
                     loss_diff += torch.abs((converted_cossim - cossim) / 2).mean()
                 loss_diff /= len(labels)
 
-        loss = (loss_same + loss_diff) / 2
+            loss = (loss_same + loss_diff) / 2
         loss_history = np.append(loss_history, torch.clone(loss).detach().cpu().numpy())
         loss_same_history = np.append(loss_same_history, torch.clone(loss_same).detach().cpu().numpy())
         loss_diff_history = np.append(loss_diff_history, torch.clone(loss_diff).detach().cpu().numpy())
@@ -210,7 +208,7 @@ def eval_target(
 
     return loss_avg.item()
 
-def calculate_features_from_dataset(model, dataloader, transform, usage):
+def calculate_features_from_dataset(model, dataloader, usage):
     all_features = torch.tensor([])
     all_labels = np.array([])
     dataset_name = options.dataset_dir[options.dataset_dir.rfind('/')+1:]
@@ -222,7 +220,7 @@ def calculate_features_from_dataset(model, dataloader, transform, usage):
     else:
         for images, labels in tqdm(dataloader):
             images = images.to(device)
-            features = model(transform(images)).detach().cpu()
+            features = model(images).detach().cpu()
             all_features = torch.concat((all_features, features))
             all_labels = np.append(all_labels, labels)
         with open(pkl_path, 'wb') as f:
@@ -232,23 +230,10 @@ def calculate_features_from_dataset(model, dataloader, transform, usage):
     return all_features,all_labels 
 
 
-def set_global():
+def main():
     global options
     global device
-
-    options = get_options()
-    # Decide device
-    gpu_id = get_freer_gpu()
-    device = f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu"
-
-    # Decide device
-    # device = f"cuda:{options.gpu_idx}" if torch.cuda.is_available() else "cpu"
-
-    options.device = device
-
-def main():
-
-    set_global()
+    device, options = set_global(get_options)
 
     if options.resume:
         if options.resume_epoch is None:
@@ -277,9 +262,6 @@ def main():
     logger.info(vars(options))
 
     # Load models
-    img_size_T = get_img_size(options.target_model)
-    img_size_A = get_img_size(options.attack_model)
-
     log_test_loss = np.array([])
 
     for i_iter in range(options.iteration):
@@ -359,14 +341,6 @@ def main():
             pin_memory=True
         )
 
-        # Prepare transfomer
-        transform_T = transforms.Compose([
-            transforms.Resize((img_size_T, img_size_T)),
-        ])
-        transform_A = transforms.Compose([
-            transforms.Resize((img_size_A, img_size_A)),
-        ])
-
         # Prepare optimizer and criterion
         optimizer = optim.Adam(AE.parameters(), lr=options.learning_rate, betas=(options.beta1, options.beta2), weight_decay=options.weight_decay)
         criterion = nn.CosineSimilarity()
@@ -376,9 +350,9 @@ def main():
 
         # Calculate features for negative loss calculation
         if options.negative_loss:
-            features_train, labels_train = calculate_features_from_dataset(A, train_dataloader, transform_A, 'train')
-            features_test, labels_test= calculate_features_from_dataset(A, test_dataloader, transform_A, 'test')
-            features_val, labels_val= calculate_features_from_dataset(A, val_dataloader, transform_A, 'valid')
+            features_train, labels_train = calculate_features_from_dataset(A, train_dataloader, 'train')
+            features_test, labels_test= calculate_features_from_dataset(A, test_dataloader, 'test')
+            features_val, labels_val= calculate_features_from_dataset(A, val_dataloader, 'valid')
         else:
             features_train, labels_train = None, None
             features_test, labels_test= None, None
@@ -415,8 +389,6 @@ def main():
                 train_dataloader,
                 T,
                 A,
-                transform_T,
-                transform_A,
                 AE,
                 (features_train, labels_train),
                 criterion,
@@ -431,8 +403,6 @@ def main():
                 val_dataloader,
                 T,
                 A,
-                transform_T,
-                transform_A,
                 AE,
                 (features_val, labels_val),
                 criterion,
@@ -445,8 +415,6 @@ def main():
                 test_dataloader,
                 T,
                 A,
-                transform_T,
-                transform_A,
                 AE,
                 (features_test, labels_test),
                 criterion,

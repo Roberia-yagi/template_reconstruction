@@ -6,7 +6,7 @@ from typing import Tuple, List
 
 # adapted from The Secret Revealer
 class Discriminator3(nn.Module):
-    def __init__(self, input_dim: int, network_dim: int, img_shape: Tuple[int, int, int]):
+    def __init__(self, input_dim: int, network_dim: int):
         super().__init__()
 
         def conv(in_channels: int, out_channels: int) -> List[nn.Module]:
@@ -57,9 +57,8 @@ class Discriminator3(nn.Module):
 if __name__ == '__main__':
     batch_size = 64
     img_shape = (3, 64, 64)
-    d = Discriminator3(input_dim=3, network_dim=64, img_shape=img_shape)
+    d = Discriminator3(input_dim=3, network_dim=64)
     img = torch.randn(batch_size, *img_shape)
-    print(img.shape)
 
     out = d(img)
     print(out.shape)

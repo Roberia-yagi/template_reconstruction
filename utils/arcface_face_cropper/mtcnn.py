@@ -27,7 +27,7 @@ class MTCNN():
         os.chdir(orig_folder)
         
     def align(self, img, dataset):
-        if not dataset in ['CASIA', 'LFW']:
+        if not dataset in ['CASIA', 'LFW', 'GAN']:
             raise('Model is not valid in mtcnn')
         boxes, landmarks = self.detect_faces(img)
         # print(f'Number of faces: {len(boxes)}')

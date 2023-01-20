@@ -3,24 +3,19 @@ import sys
 sys.path.append('../')
 sys.path.append('../../')
 import os
-import time
 import PIL
 import pickle
-from tqdm import tqdm
 import glob
 import datetime
 import argparse
-from typing import Any, Tuple
+from typing import Any
 import matplotlib.pyplot as plt
 
 import torch
 import numpy as np
 from torch import nn
 from torchvision import transforms
-from torch.utils.data import DataLoader
 from torchvision import datasets
-from torchvision.utils import save_image
-
 from sklearn.metrics import roc_curve
 
 from utils.lfw import LFW
@@ -81,8 +76,16 @@ def show_graph(result_dir, step1_options, cossims):
     x = np.r_[same_cossim, diff_cossim]
     y = np.r_[np.ones(same_cossim.shape), np.zeros(diff_cossim.shape)]
     fpr, tpr, thresholds = roc_curve(y, x)
+    print(f'FPR:{fpr}')
+    print(f'TPR:{tpr}')
 
-    threshold_idx = np.argmin(fpr - tpr)
+    # Threshold is at the crossing point
+    # threshold_idx = np.argmin(fpr - tpr)
+    # THreshold is at the EER
+    threshold_idx = np.argmin(np.abs(1 - fpr - tpr))
+    print(f'Threshold idx: {threshold_idx}')
+    print(f'FPR at the threshold:{fpr[threshold_idx]}')
+    print(f'TPR at the threshold:{tpr[threshold_idx]}')
     threshold = thresholds[threshold_idx]
 
     return threshold
@@ -108,6 +111,7 @@ def get_options() -> Any:
     parser.add_argument("--step2_dir", type=str, required=True, help="path to directory which includes the step2 result")
     parser.add_argument("--embedding_size", type=int, default=512, help="dimensionality of the latent space")
     parser.add_argument("--target_model_path", type=str, help='path to pretrained model')
+    # TODO: Pack same and diff in an argment 
     parser.add_argument("--same_pickle_path", type=str, required=True,
                         help="path to directory which includes the pickle of original data")
     parser.add_argument("--diff_pickle_path", type=str, required=True,
@@ -255,6 +259,7 @@ def main():
 
     threshold = show_graph(result_dir=result_dir, step1_options=step1_options, cossims=cossims_TypeA)
     logger.info(f'TypeA')
+    logger.info(f'Threshold: {threshold}')
     logger.info(f'The average of cosine similarity: {cossims_TypeA.mean()}')
     logger.info(f'TAR: {(cossims_TypeA > threshold).sum()/len(cossims_TypeA)}')
 

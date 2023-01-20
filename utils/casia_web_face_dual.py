@@ -156,8 +156,9 @@ def main():
                            eval_num_of_identities=300,
                            eval_num_per_identity=2,)
 
-    print(dataset.base_dir1)
-    print(dataset.base_dir2)
+    for _ in dataset:
+        break
+
 
 
 if __name__ == '__main__':
