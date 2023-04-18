@@ -11,6 +11,7 @@ import numpy as np
 from tqdm import tqdm
 import datetime
 import pickle
+import json
 
 from typing import Any, List, Tuple
 
@@ -25,7 +26,7 @@ from torch import nn
 import matplotlib.pyplot as plt
 
 from utils.util import (save_json,  create_logger, resolve_path, load_model_as_feature_extractor, 
-load_model_as_feature_extractor, get_freer_gpu, get_img_size, get_output_shape, set_global)
+load_model_as_feature_extractor, set_global)
 
 def get_options() -> Any:
     parser = argparse.ArgumentParser()
@@ -41,7 +42,7 @@ def get_options() -> Any:
 
 
     # System preferences
-    parser.add_argument("--gpu_idx", type=int, default=0, help="index of cuda devices")
+    parser.add_argument("--gpu_idx", type=int, default=None, help="index of cuda devices")
 
     # Model Params
     parser.add_argument("--embedding_size", type=int, default=512,
@@ -86,6 +87,14 @@ def normalize_hist(x, p):
 #     processed_tensor = (image_tensor - 127.5) / 128.0
 #     return processed_tensor
 
+def create_threshold_dict(dict, name, idx, thresholds, fpr, tpr):
+    dict[name]['threshold'] = str(thresholds[idx])
+    dict[name]['fpr'] = str(fpr[idx])
+    dict[name]['tpr'] = str(tpr[idx])
+
+    return dict
+    
+
 
 def main():
     global options
@@ -106,8 +115,6 @@ def main():
     logger.info(vars(options))
 
     # Load models
-    img_size = get_img_size(options.target_model)
-
     model, _ = load_model_as_feature_extractor(
         arch=options.target_model,
         embedding_size=options.embedding_size,
@@ -172,6 +179,8 @@ def main():
     same_datas= torch.Tensor()
     same_cossims = torch.Tensor()
     for i, (data, (id, filename)) in enumerate(tqdm(dataset)):
+        # if i > 100:
+        #     break
         data = data.unsqueeze(0).to(device)
         if current_id is None or current_id != id:
             if same_datas.size(dim=0) != 0:
@@ -209,7 +218,7 @@ def main():
                                         dif_features[int(options.batch_size/2):]).cpu()
                     dif_cossims = torch.concat((dif_cossims, cossims))
 
-    # Create histogram
+    # Create a histogram
     x1, _, p1 = plt.hist(same_cossims.numpy(),  color='green', bins=28, alpha=0.3, label='Same')
     x2, _, p2 = plt.hist(dif_cossims.numpy(), color='blue', bins=28, alpha=0.3, label='Diff')
     plt.xlabel("Cos sim")
@@ -221,20 +230,37 @@ def main():
     plt.savefig(resolve_path(result_dir, f'{options.target_model}_{options.embedding_size}_hist.png'))
     plt.clf()
 
-    # save data as pickle
-    with open(resolve_path(result_dir, f'{options.target_model}_{options.dataset}_same_cossim.pkl'), 'wb') as f:
+    # save data as pickles
+    with open(resolve_path(result_dir, f'same.pkl'), 'wb') as f:
         pickle.dump(same_cossims.numpy(), f)
-    with open(resolve_path(result_dir, f'{options.target_model}_{options.dataset}_diff_cossim.pkl'), 'wb') as f:
+    with open(resolve_path(result_dir, f'diff.pkl'), 'wb') as f:
         pickle.dump(dif_cossims.numpy(), f)
 
     # Calculate scores and draw ROC curve
     x = np.r_[same_cossims.numpy(), dif_cossims.numpy()]
     y = np.r_[np.ones(same_cossims.numpy().shape), np.zeros(dif_cossims.numpy().shape)]
-    fpr, tpr, thresholds = roc_curve(y, x)
+    fpr, tpr, thresholds = roc_curve(y, x, drop_intermediate=False)
 
-    # threshold_idx = np.argmin(fpr - tpr)
-    threshold_idx = np.argmin(fpr - tpr)
-    logger.info(f"[Threshold: {thresholds[threshold_idx]}] [FPR: {fpr[threshold_idx]}] [TPR: {tpr[threshold_idx]}]")
+    results_threshold = {'EER': {}, 'fpr1': {}, 'fpr0.1': {}, 'fpr0.01': {}}
+    threshold_EER_idx = np.argmin(np.abs(1 - fpr - tpr))
+    logger.info(f"[Threshold at EER: {thresholds[threshold_EER_idx]}] [FPR: {fpr[threshold_EER_idx]}] [TPR: {tpr[threshold_EER_idx]}]")
+    create_threshold_dict(results_threshold, 'EER', threshold_EER_idx, thresholds, fpr, tpr)
+
+    threshold_1_idx = np.argmin(np.abs(fpr - .01))
+    logger.info(f"[Threshold at FPR 1%: {thresholds[threshold_1_idx]}] [FPR: {fpr[threshold_1_idx]}] [TPR: {tpr[threshold_1_idx]}]")
+    create_threshold_dict(results_threshold, 'fpr1', threshold_1_idx, thresholds, fpr, tpr)
+
+    threshold_point_1_idx = np.argmin(np.abs(fpr - .001))
+    logger.info(f"[Threshold at FPR 0.1%: {thresholds[threshold_point_1_idx]}] [FPR: {fpr[threshold_point_1_idx]}] [TPR: {tpr[threshold_point_1_idx]}]")
+    create_threshold_dict(results_threshold, 'fpr0.1', threshold_point_1_idx, thresholds, fpr, tpr)
+
+    threshold_point_01_idx = np.argmin(np.abs(fpr - .0001))
+    logger.info(f"[Threshold at FPR 0.01%: {thresholds[threshold_point_01_idx]}] [FPR: {fpr[threshold_point_01_idx]}] [TPR: {tpr[threshold_point_01_idx]}]")
+    create_threshold_dict(results_threshold, 'fpr0.01', threshold_point_01_idx, thresholds, fpr, tpr)
+
+    with open(resolve_path(result_dir, './thresholds.json'), 'w') as f:
+        json.dump(results_threshold, f)
+
     plt.plot(fpr, tpr)
     plt.xlabel("FPR")
     plt.ylabel("TPR")

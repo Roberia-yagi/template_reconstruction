@@ -20,8 +20,8 @@ from torch import optim
 from utils.lfw import LFW
 from utils.ijb import IJB
 from utils.casia_web_face import CasiaWebFace
-from utils.util import (resolve_path, save_json, create_logger, get_img_size,load_attacker_discriminator, load_attacker_generator, 
-                        load_autoencoder, load_json, load_model_as_feature_extractor, RandomBatchLoader, get_img_size, get_freer_gpu, align_face_image, set_global)
+from utils.util import (resolve_path, save_json, create_logger, get_img_size, load_StyleGAN_discriminator, load_StyleGAN_generator, load_WGAN_discriminator, load_WGAN_generator,
+                        load_autoencoder, load_json, load_model_as_feature_extractor, RandomBatchLoader, get_img_size, set_global)
 
 from utils.arcface_face_cropper.mtcnn import MTCNN
 
@@ -35,6 +35,9 @@ def get_options() -> Any:
     parser.add_argument("--identifier", type=str, default=time_stamp, help="timestamp")
     parser.add_argument("--gpu_idx", type=int, default=None, help="index of cuda devices")
     parser.add_argument("--multi_gpu", action='store_true', help="flag of multi gpu")
+
+    # Model
+    parser.add_argument("--GAN", type=str, default='StyleGAN', help="an architecture of a pretrained GAN")
     
     # Dir
     parser.add_argument("--dataset", type=str, required=True, help='test dataset:[LFWA, IJB-C, CASIA]')
@@ -51,7 +54,6 @@ def get_options() -> Any:
     parser.add_argument("--resume", type=int, default=-1, help="image of resume")
 
     # Conditions
-    parser.add_argument("--latent_dim", type=int, default=100, help="dimensionality of the latent space")
     parser.add_argument("--img_channels", type=int, default=3, help="number of image channels")
     parser.add_argument("--num_of_identities", type=int, default=300, help="size of test dataset")
     parser.add_argument("--num_per_identity", type=int, default=2, help="size of test dataset")
@@ -63,19 +65,23 @@ def get_options() -> Any:
 
 
 def L_prior(D: nn.Module, G: nn.Module, z: torch.Tensor) -> torch.Tensor:
-    return torch.mean(-D(G(z)))
+    print(z.shape)
+    imgs, _ = G(z)
+    print(imgs.shape)
+    return torch.mean(-D(imgs))
 
 
 def calc_id_loss(G: nn.Module, FE: nn.Module, detector, z: torch.Tensor, device: str, model_name: str, all_target_features: torch.Tensor, image_size: int) -> torch.Tensor:
     global options
     metric = nn.CosineSimilarity(dim=1)
-    orig_imgs = G(z).to(device)
+    orig_imgs, _ = G(z)
+    orig_imgs = orig_imgs.detach()
 
     # Works well
     transform = transforms.Resize((image_size, image_size))
     Gz_features = FE(transform(orig_imgs)).to(device)
 
-    # Bug remains
+    # Bug remains -> Impossible to probagate backwards with MTCNN implemented not by Pytorch
     # transform = transforms.Resize((image_size, image_size))
     # imgs = align_face_image(transform(orig_imgs), 'GAN', model_name, detector).to(device)
     # Gz_features = FE(imgs).to(device)
@@ -117,9 +123,9 @@ def main():
     global options
     global device
     device, options = set_global(get_options)
-    # Create directory to save results
 
-    step1_dir = options.step1_dir[options.step1_dir.rfind('/'):][18:]
+    # Create directory to save results
+    step1_dir = options.step1_dir[options.step1_dir.rfind('/'):]
     result_dir = resolve_path(options.result_dir, (options.identifier + '_' + step1_dir))
     os.makedirs(result_dir, exist_ok=True)
     
@@ -141,18 +147,32 @@ def main():
     img_size_T = get_img_size(step1_options.target_model)
     img_size_A = get_img_size(step1_options.attack_model)
 
-    D = load_attacker_discriminator(
-        path=resolve_path(options.GAN_dir, "D.pth"),
-        input_dim=GAN_options["img_channels"],
-        network_dim=GAN_options["D_network_dim"],
-        device=device
-    ).to(device)
-    G = load_attacker_generator(
-        path=resolve_path(options.GAN_dir, "G.pth"),
-        latent_dim=GAN_options["latent_dim"],
-        network_dim=GAN_options["G_network_dim"],
-        device=device
-    ).to(device)
+    # Load GAN
+    if options.GAN == 'StyleGAN':
+        D = load_StyleGAN_discriminator(
+            device=device
+        ).to(device)
+        G, _, latent_dim = load_StyleGAN_generator(
+            truncation=1,
+            truncation_mean=4096,
+            device=device
+        )
+        G.to(device)
+    elif options.GAN == 'WGAN':
+        D = load_WGAN_discriminator(
+            path=resolve_path(options.GAN_dir, "D.pth"),
+            input_dim=GAN_options["img_channels"],
+            network_dim=GAN_options["D_network_dim"],
+            device=device
+        ).to(device)
+        G, latent_dim = load_WGAN_generator(
+            path=resolve_path(options.GAN_dir, "G.pth"),
+            network_dim=GAN_options["G_network_dim"],
+            device=device
+        ).to(device)
+    else:
+        raise(f'GAN {options.GAN} does not exist')
+
     T, _ = load_model_as_feature_extractor(
         arch=step1_options.target_model,
         embedding_size=step1_options.target_embedding_size,
@@ -221,7 +241,7 @@ def main():
         dataset = CasiaWebFace(
                             base_dir=options.dataset_dir,
                             usage='eval',
-                            num_of_identities=7000,
+                            num_of_identities=5120,
                             num_per_identity=20,
                             eval_num_of_identities=options.num_of_identities,
                             eval_num_per_identity=options.num_per_identity,\
@@ -229,10 +249,17 @@ def main():
                                 transforms.ToTensor(),
                             ]),
                         )
+    else:
+        raise(f'Dataset {options.dataset} does not exist')
+
+    # double_identity: used to make sure the identity of image has 2 different images in the dataset for Type-B experiment
+    # used_identity: used to make sure the reconstructed image should not be reconstructed again
+    doubled_identity = set()
     used_identity = set()
     reconstruction_count = 0
 
     torch.manual_seed(options.seed)
+    torch.cuda.manual_seed(options.seed)
     dataloader = DataLoader(
         dataset,
         batch_size=1,
@@ -242,14 +269,12 @@ def main():
         pin_memory=True
     )
 
-    num_of_images = options.num_of_identities * options.num_per_identity
-
     #########################
     # Reconstruction Starts #
     #########################
 
     for data, (labels, filenames) in dataloader:
-        if reconstruction_count >= num_of_images:
+        if reconstruction_count >= options.num_of_identities:
             break
         data = data.to(device)
         target_feature = C(T(transform_T(data))).detach()
@@ -257,23 +282,26 @@ def main():
         # Check if the identity of the data is unique
         if options.dataset == 'CASIA':
             reconstruction_count += 1
-        else:
-            for label in labels:
-                if label in used_identity:
-                    continue
-                else:
-                    used_identity.add(label)
-                    reconstruction_count += 1
+        elif options.dataset == 'LFW':
+            label = labels[0] # labels contains only an image
+            if label in used_identity:
+                # Continue since the identity is already reconstructed
+                continue
+            elif label in doubled_identity:
+                # Reconstruct the image since the identity has two different images
+                used_identity.add(label)
+                reconstruction_count += 1
+            else:
+                # Continue since it is checked that the identity has at least one image
+                doubled_identity.add(label)
+                continue
 
         if options.resume > reconstruction_count:
             continue
         
         # The result directory should be as below.
         # result dir - label1 - image1
-        #                     - image2
-        #            - label2
-        #                     - image3
-        #                     - image4
+        #            - label2 - image2
 
         # Create the result folder for identity
         for label, filename in zip(labels, filenames):
@@ -286,7 +314,7 @@ def main():
 
         # Search z 
         iteration = int(256 / options.batch_size)
-        z = torch.randn(options.batch_size * iteration, options.latent_dim, requires_grad=True, device=device) 
+        z = torch.randn(options.batch_size * iteration, latent_dim, requires_grad=True, device=device) 
         optimizer = optim.Adam([z], lr=options.learning_rate, betas=(0.9, 0.999), weight_decay=0)
         dataloader = RandomBatchLoader(z, options.batch_size)
 
@@ -301,6 +329,8 @@ def main():
                 break
 
             for _, batch in enumerate(dataloader):
+                if options.GAN == "StyleGAN":
+                    batch = batch.unsqueeze(0)
                 optimizer.zero_grad()
 
                 L_prior_loss = L_prior(D, G, batch)
@@ -340,13 +370,14 @@ def main():
         del total_loss_avg
         torch.cuda.empty_cache()
 
-        # Save results
-        result_dataloader = RandomBatchLoader(z, options.batch_size)
-
         # Calc 
         for _, batch in enumerate(z):
             batch = batch.unsqueeze(0)
-            images = G(batch).detach()
+            if options.GAN == "StyleGAN":
+                batch = batch.unsqueeze(0)
+
+            images, _ = G(batch)
+            images = images.detach()
 
             result  = get_best_image(A, images, detector, step1_options.attack_model, target_feature, img_size_A)
             if result is not None:
@@ -360,7 +391,7 @@ def main():
         target_images_path = resolve_path(result_filename_dir, f"target_images.png")
         save_image(data, target_images_path, normalize=True)
 
-        logger.info(f'{reconstruction_count}/{num_of_images} has been done')
+        logger.info(f'{reconstruction_count}/{options.num_of_identities} has been done')
 
     elapsed_time = time.time() - start_time
     logger.debug(f"[Elapsed time of all epochs: {elapsed_time}]")

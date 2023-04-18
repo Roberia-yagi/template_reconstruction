@@ -5,7 +5,7 @@ import torch.nn as nn
 from typing import Tuple, List
 
 # adapted from The Secret Revealer
-class Discriminator3(nn.Module):
+class WGAN_Discriminator(nn.Module):
     def __init__(self, input_dim: int, network_dim: int):
         super().__init__()
 

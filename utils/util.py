@@ -25,8 +25,10 @@ from magface_pytorch.inference import network_inf
 from magface_pytorch.models import magface 
 
 from my_models.AutoEncoder import AutoEncoder
-from my_models.Discriminator3 import Discriminator3
-from my_models.Generator3 import Generator3
+from my_models.WGAN_Discriminator import WGAN_Discriminator
+from my_models.WGAN_Generator import WGAN_Generator
+from my_models.stylegan2 import StyleGAN2_Generator
+from my_models.stylegan2 import StyleGAN2_Discriminator
 
 def save_json(path: str, obj: Any):
     with open(path, "w") as json_file:
@@ -239,8 +241,8 @@ def get_img_size(model: str) -> int:
     
     return img_size
 
-def load_attacker_discriminator(path: str, input_dim: int, network_dim: int, device) -> nn.Module:
-    D = Discriminator3(input_dim=input_dim, network_dim=network_dim)
+def load_WGAN_discriminator(path: str, input_dim: int, network_dim: int, device) -> nn.Module:
+    D = WGAN_Discriminator(input_dim=input_dim, network_dim=network_dim)
     D.load_state_dict(torch.load(path, device))
 
     for param in D.parameters():
@@ -250,8 +252,24 @@ def load_attacker_discriminator(path: str, input_dim: int, network_dim: int, dev
 
     return D
 
-def load_attacker_generator(path: str, latent_dim: int, network_dim:int, device) -> nn.Module:
-    G = Generator3(latent_dim=latent_dim, network_dim=network_dim)
+def load_StyleGAN_discriminator(device):
+    # size, latent, n_mlp, channel_multiplier
+    D = StyleGAN2_Discriminator(
+        1024
+    ).to(device)
+    checkpoint = torch.load('/home/akasaka/nas/models/stylegan2-ffhq-config-f.pt')
+    print(checkpoint.keys())
+    D.load_state_dict(checkpoint['d'])
+
+    for param in D.parameters():
+        param.requires_grad = False
+    
+    D.eval()
+
+    return D
+
+def load_WGAN_generator(path: str, network_dim:int, device) -> Tuple[nn.Module, int]:
+    G = WGAN_Generator(latent_dim=100, network_dim=network_dim)
     G.load_state_dict(torch.load(path, device))
 
     for param in G.parameters():
@@ -259,7 +277,28 @@ def load_attacker_generator(path: str, latent_dim: int, network_dim:int, device)
     
     G.eval()
 
-    return G
+    return G, 100
+
+def load_StyleGAN_generator(truncation:int, truncation_mean:int, device) -> Tuple[nn.Module, int, int]:
+    # size, latent, n_mlp, channel_multiplier
+    G = StyleGAN2_Generator(
+        1024, 512, 8, channel_multiplier=2
+    ).to(device)
+    checkpoint = torch.load('/home/akasaka/nas/models/stylegan2-ffhq-config-f.pt')
+    G.load_state_dict(checkpoint["g_ema"])
+    if truncation < 1:
+        with torch.no_grad():
+            mean_latent = G.mean_latent(truncation_mean)
+    else:
+        mean_latent = None
+
+    for param in G.parameters():
+        param.requires_grad = False
+    
+    G.eval()
+
+    return G, mean_latent, 512
+
 
 class BatchLoader:
     def __init__(self, x: list, batch_size: int):
@@ -341,15 +380,20 @@ def get_freer_gpu():
     
     return -1
 
-def align_face_image(imgs, dataset, model, detector):
+def align_face_image(imgs: torch.Tensor, dataset, model, detector) -> torch.Tensor:
     toPIL = transforms.ToPILImage()
     toTensor = transforms.ToTensor()
     if not model in ['FaceNet', 'Arcface', 'Magface']:
         raise('Model error in align face image')
+
+    if imgs.dim() == 3:
+        imgs = imgs.unsqueeze(0)
+
     if model == 'FaceNet':
         res = imgs
     elif model == 'Arcface' or 'Magface':
         res = torch.Tensor()
+        # if the tensor has one image, unsqueeze it for "for loop"
         for img in imgs:
             img = toPIL(img)
             aligned_img = detector.align(img, dataset)
@@ -362,6 +406,9 @@ def align_face_image(imgs, dataset, model, detector):
                 if aligned_img is not None:
                     aligned_img = toTensor(aligned_img)
                     res = torch.cat((res, aligned_img.unsqueeze(0)))
+
+    if res.dim() != 4:
+        raise('Aligned image tensor should be 4 dimentional')
     return res
 
 class RandomBatchLoader:

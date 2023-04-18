@@ -5,7 +5,7 @@ import torch.nn as nn
 from typing import Tuple, List
 
 # adapted from The Secret Revealer
-class Generator3(nn.Module):
+class WGAN_Generator(nn.Module):
     def __init__(self, latent_dim: int, network_dim:int):
         super().__init__()
 	
