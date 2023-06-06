@@ -40,7 +40,7 @@ def main():
     # Create MTCNN
     mtcnn = MTCNN()
 
-    foldernames = glob(dataset_in_dir + '/img/*')
+    foldernames = glob(resolve_path(dataset_in_dir, '*'))
 
     # change the range to variable
     for foldername in tqdm(foldernames):

@@ -37,7 +37,7 @@ def get_options() -> Any:
     parser.add_argument("--multi_gpu", action='store_true', help="flag of multi gpu")
 
     # Model
-    parser.add_argument("--GAN", type=str, default='StyleGAN', help="an architecture of a pretrained GAN")
+    parser.add_argument("--GAN", type=str, default='WGAN', help="an architecture of a pretrained GAN")
     
     # Dir
     parser.add_argument("--dataset", type=str, required=True, help='test dataset:[LFWA, IJB-C, CASIA]')
@@ -57,7 +57,7 @@ def get_options() -> Any:
     parser.add_argument("--img_channels", type=int, default=3, help="number of image channels")
     parser.add_argument("--num_of_identities", type=int, default=300, help="size of test dataset")
     parser.add_argument("--num_per_identity", type=int, default=2, help="size of test dataset")
-    parser.add_argument("--seed", type=int, default=0, help="seed for pytorch dataloader shuffle")
+    parser.add_argument("--seed", type=int, default=42, help="seed for pytorch dataloader shuffle")
 
     opt = parser.parse_args()
 
@@ -65,16 +65,14 @@ def get_options() -> Any:
 
 
 def L_prior(D: nn.Module, G: nn.Module, z: torch.Tensor) -> torch.Tensor:
-    print(z.shape)
-    imgs, _ = G(z)
-    print(imgs.shape)
+    imgs, *_ = G(z)
     return torch.mean(-D(imgs))
 
 
 def calc_id_loss(G: nn.Module, FE: nn.Module, detector, z: torch.Tensor, device: str, model_name: str, all_target_features: torch.Tensor, image_size: int) -> torch.Tensor:
     global options
     metric = nn.CosineSimilarity(dim=1)
-    orig_imgs, _ = G(z)
+    orig_imgs, *_ = G(z)
     orig_imgs = orig_imgs.detach()
 
     # Works well
@@ -169,7 +167,8 @@ def main():
             path=resolve_path(options.GAN_dir, "G.pth"),
             network_dim=GAN_options["G_network_dim"],
             device=device
-        ).to(device)
+        )
+        G.to(device)
     else:
         raise(f'GAN {options.GAN} does not exist')
 
@@ -376,7 +375,8 @@ def main():
             if options.GAN == "StyleGAN":
                 batch = batch.unsqueeze(0)
 
-            images, _ = G(batch)
+            images = G(batch)
+            images, *_ = images
             images = images.detach()
 
             result  = get_best_image(A, images, detector, step1_options.attack_model, target_feature, img_size_A)

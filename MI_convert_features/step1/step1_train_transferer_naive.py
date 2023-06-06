@@ -247,7 +247,7 @@ def main():
         base_result_dir = resolve_path(options.result_dir, (options.identifier + f'_{options.num_of_identities}_identities'))
 
     if os.path.exists(base_result_dir):
-        base_result_dir = result_dir + str(randint(0, 1e9))
+        base_result_dir = base_result_dir + str(randint(0, 1e9))
         os.makedirs(base_result_dir, exist_ok=False)
     else:
         os.makedirs(base_result_dir, exist_ok=False)

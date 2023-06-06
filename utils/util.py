@@ -30,6 +30,8 @@ from my_models.WGAN_Generator import WGAN_Generator
 from my_models.stylegan2 import StyleGAN2_Generator
 from my_models.stylegan2 import StyleGAN2_Discriminator
 
+#---------------------------------------
+
 def save_json(path: str, obj: Any):
     with open(path, "w") as json_file:
         json.dump(obj, json_file, indent=4)
@@ -37,6 +39,8 @@ def save_json(path: str, obj: Any):
 def load_json(path: str) -> Any:
     with open(path) as json_obj:
         return edict(json.load(json_obj))
+
+#---------------------------------------
 
 def create_logger(name: str, path: Optional[str] = None):
     logger = logging.getLogger(name)
@@ -58,11 +62,15 @@ def create_logger(name: str, path: Optional[str] = None):
 
     return logger
 
+#---------------------------------------
+
 def resolve_path(*pathes: Tuple[str]) -> str:
     return os.path.expanduser(os.path.join(*pathes))
 
 def remove_path_prefix(path: str) -> str:
     return path[path.rfind('/')+1:].replace(' ', '')
+
+#---------------------------------------
 
 # To be refactored
 # def extract_target_features(T, img_size, target_image_dir, target_dir_name, single_mode, device):
@@ -86,6 +94,8 @@ def remove_path_prefix(path: str) -> str:
 #             break
 
 #     return all_target_images, all_target_features
+
+#---------------------------------------
 
 def load_model_as_feature_extractor(arch: str, embedding_size: int, mode: str, path: str, pretrained=False) -> Tuple[nn.Module, int]:
     if not mode in ['train', 'eval']:
@@ -209,6 +219,8 @@ def load_model_as_feature_extractor(arch: str, embedding_size: int, mode: str, p
 
     return model, params_to_update
 
+#---------------------------------------
+
 def load_autoencoder(pretrained: bool, model_path: str, mode: str, ver:int):
     if not mode in ['train', 'eval']:
         raise("Model mode is incorrect")
@@ -226,9 +238,12 @@ def load_autoencoder(pretrained: bool, model_path: str, mode: str, ver:int):
         
     return model
 
+#---------------------------------------
 
 def get_output_shape(model, image_dim):
     return model(torch.rand(2, 3, image_dim ,image_dim)).data.shape
+
+#---------------------------------------
 
 def get_img_size(model: str) -> int:
     assert model in ["FaceNet", "Arcface", "Magface"]
@@ -240,6 +255,8 @@ def get_img_size(model: str) -> int:
         img_size = 112
     
     return img_size
+
+#---------------------------------------
 
 def load_WGAN_discriminator(path: str, input_dim: int, network_dim: int, device) -> nn.Module:
     D = WGAN_Discriminator(input_dim=input_dim, network_dim=network_dim)
@@ -300,6 +317,8 @@ def load_StyleGAN_generator(truncation:int, truncation_mean:int, device) -> Tupl
     return G, mean_latent, 512
 
 
+#---------------------------------------
+
 class BatchLoader:
     def __init__(self, x: list, batch_size: int):
         self.x = x
@@ -324,6 +343,8 @@ class BatchLoader:
 
         return self.x[start:end]
 
+#---------------------------------------
+
 def extract_features_from_nnModule(
                      batch: Any,
                      model: nn.Module,
@@ -336,6 +357,8 @@ def extract_features_from_nnModule(
     features.detach().to(device)
 
     return features
+
+#---------------------------------------
 
 def get_memory_usage():
     memory_available = np.empty(3)
@@ -380,6 +403,8 @@ def get_freer_gpu():
     
     return -1
 
+#---------------------------------------
+
 def align_face_image(imgs: torch.Tensor, dataset, model, detector) -> torch.Tensor:
     toPIL = transforms.ToPILImage()
     toTensor = transforms.ToTensor()
@@ -411,6 +436,8 @@ def align_face_image(imgs: torch.Tensor, dataset, model, detector) -> torch.Tens
         raise('Aligned image tensor should be 4 dimentional')
     return res
 
+#---------------------------------------
+
 class RandomBatchLoader:
     def __init__(self, x: torch.Tensor, batch_size: int):
         self.x = x
@@ -436,6 +463,34 @@ class RandomBatchLoader:
         mask = self.idx[start:end]
 
         return self.x[mask]
+
+#------------------------------------------
+
+class BatchLoader:
+    def __init__(self, x: list, batch_size: int):
+        self.x = x
+        self.batch_size = batch_size
+
+        self.idx = list(range(len(self.x)))
+        self.current = 0
+
+    def __iter__(self):
+        self.idx = list(range(len(self.x)))
+        self.current = 0
+        return self
+
+    def __next__(self):
+        start = self.batch_size * self.current 
+        end = self.batch_size * (self.current + 1)
+
+        if start >= len(self.x):
+            raise StopIteration()
+
+        self.current += 1
+
+        return self.x[start:end]
+
+#---------------------------------------
 
 def set_global(get_options):
     options = get_options()
