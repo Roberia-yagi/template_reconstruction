@@ -49,7 +49,6 @@ def get_options() -> Any:
     parser.add_argument("--target_model_path", type=str, help='path to pretrained model')
     parser.add_argument("--threshold_path", type=str, required=True,
                         help="path to directory which includes")
-    parser.add_argument("--dataset_path", type=str, required=True)
     parser.add_argument("--seed", type=int, default=0, help="seed for pytorch dataloader shuffle")
     parser.add_argument("--num_of_images", type=int, default=300, help="size of test dataset")
 

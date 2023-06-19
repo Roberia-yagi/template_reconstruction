@@ -21,7 +21,7 @@ from utils.lfw import LFW
 from utils.ijb import IJB
 from utils.casia_web_face import CasiaWebFace
 from utils.util import (resolve_path, save_json, create_logger, get_img_size, load_StyleGAN_discriminator, load_StyleGAN_generator, load_WGAN_discriminator, load_WGAN_generator,
-                        load_autoencoder, load_json, load_model_as_feature_extractor, RandomBatchLoader, get_img_size, set_global)
+                        load_autoencoder, load_json, load_model_as_feature_extractor, RandomBatchLoader, get_img_size, set_global, remove_path_prefix)
 
 from utils.arcface_face_cropper.mtcnn import MTCNN
 
@@ -50,7 +50,7 @@ def get_options() -> Any:
     parser.add_argument("--batch_size", type=int, default=64, help="size of the batches")
     parser.add_argument("--epochs", type=int, default=100, help="times to initialize z") 
     parser.add_argument("--learning_rate", type=float, default=0.035, help="learning rate")
-    parser.add_argument("--lambda_i", type=float, default=100, help="learning rate")
+    parser.add_argument("--lambda_i", type=float, default=100, help="the weight of id loss`")
     parser.add_argument("--resume", type=int, default=-1, help="image of resume")
 
     # Conditions
@@ -65,15 +65,18 @@ def get_options() -> Any:
 
 
 def L_prior(D: nn.Module, G: nn.Module, z: torch.Tensor) -> torch.Tensor:
-    imgs, *_ = G(z)
+    imgs = G(z)
+    if options.GAN == 'StyleGAN':
+        imgs, _ = imgs
     return torch.mean(-D(imgs))
 
 
 def calc_id_loss(G: nn.Module, FE: nn.Module, detector, z: torch.Tensor, device: str, model_name: str, all_target_features: torch.Tensor, image_size: int) -> torch.Tensor:
     global options
     metric = nn.CosineSimilarity(dim=1)
-    orig_imgs, *_ = G(z)
-    orig_imgs = orig_imgs.detach()
+    orig_imgs = G(z)
+    if options.GAN == 'StyleGAN':
+        orig_imgs, _ = orig_imgs
 
     # Works well
     transform = transforms.Resize((image_size, image_size))
@@ -123,7 +126,7 @@ def main():
     device, options = set_global(get_options)
 
     # Create directory to save results
-    step1_dir = options.step1_dir[options.step1_dir.rfind('/'):]
+    step1_dir = remove_path_prefix(options.step1_dir)
     result_dir = resolve_path(options.result_dir, (options.identifier + '_' + step1_dir))
     os.makedirs(result_dir, exist_ok=True)
     
@@ -239,9 +242,9 @@ def main():
     elif options.dataset == 'CASIA':
         dataset = CasiaWebFace(
                             base_dir=options.dataset_dir,
-                            usage='eval',
-                            num_of_identities=5120,
-                            num_per_identity=20,
+                            usage='train',
+                            num_of_identities=300,
+                            num_per_identity=2,
                             eval_num_of_identities=options.num_of_identities,
                             eval_num_per_identity=options.num_per_identity,\
                             transform=transforms.Compose([
@@ -250,12 +253,6 @@ def main():
                         )
     else:
         raise(f'Dataset {options.dataset} does not exist')
-
-    # double_identity: used to make sure the identity of image has 2 different images in the dataset for Type-B experiment
-    # used_identity: used to make sure the reconstructed image should not be reconstructed again
-    doubled_identity = set()
-    used_identity = set()
-    reconstruction_count = 0
 
     torch.manual_seed(options.seed)
     torch.cuda.manual_seed(options.seed)
@@ -272,32 +269,10 @@ def main():
     # Reconstruction Starts #
     #########################
 
-    for data, (labels, filenames) in dataloader:
-        if reconstruction_count >= options.num_of_identities:
-            break
+    for k, (data, (labels, filenames)) in enumerate(dataloader):
         data = data.to(device)
         target_feature = C(T(transform_T(data))).detach()
 
-        # Check if the identity of the data is unique
-        if options.dataset == 'CASIA':
-            reconstruction_count += 1
-        elif options.dataset == 'LFW':
-            label = labels[0] # labels contains only an image
-            if label in used_identity:
-                # Continue since the identity is already reconstructed
-                continue
-            elif label in doubled_identity:
-                # Reconstruct the image since the identity has two different images
-                used_identity.add(label)
-                reconstruction_count += 1
-            else:
-                # Continue since it is checked that the identity has at least one image
-                doubled_identity.add(label)
-                continue
-
-        if options.resume > reconstruction_count:
-            continue
-        
         # The result directory should be as below.
         # result dir - label1 - image1
         #            - label2 - image2
@@ -376,8 +351,8 @@ def main():
                 batch = batch.unsqueeze(0)
 
             images = G(batch)
-            images, *_ = images
-            images = images.detach()
+            if options.GAN == "StyleGAN":
+                images, _ = images
 
             result  = get_best_image(A, images, detector, step1_options.attack_model, target_feature, img_size_A)
             if result is not None:
@@ -391,7 +366,7 @@ def main():
         target_images_path = resolve_path(result_filename_dir, f"target_images.png")
         save_image(data, target_images_path, normalize=True)
 
-        logger.info(f'{reconstruction_count}/{options.num_of_identities} has been done')
+        logger.info(f'{k}/{options.num_of_identities} has been done')
 
     elapsed_time = time.time() - start_time
     logger.debug(f"[Elapsed time of all epochs: {elapsed_time}]")
